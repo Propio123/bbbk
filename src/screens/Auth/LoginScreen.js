@@ -24,46 +24,61 @@ const LoginScreen = () => {
   const [verPassword, setVerPassword] = useState(false);
   const router = useRouter();
 
-  const handleLogin = () => {
+  // Función para Iniciar Sesión
+  const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert("Aviso", "Por favor, ingresa tus credenciales");
+      Alert.alert("Campos vacíos", "Por favor, completa todos los campos.");
       return;
     }
 
-    signInWithEmailAndPassword(auth, email, password)
-      .then((userCredential) => {
-        console.log("Login exitoso:", userCredential.user.email);
-        // El router.replace se encargará de llevarlo al Home según su flujo
-      })
-      .catch((error) => {
-        let mensaje = "Credenciales incorrectas o problema de red.";
-        if (error.code === "auth/user-not-found")
-          mensaje = "El usuario no existe.";
-        if (error.code === "auth/wrong-password")
-          mensaje = "Contraseña incorrecta.";
-        Alert.alert("Error", mensaje);
-      });
+    try {
+      const userCredential = await signInWithEmailAndPassword(
+        auth,
+        email,
+        password,
+      );
+      console.log("Acceso concedido:", userCredential.user.email);
+    } catch (error) {
+      console.log("Error detallado:", error.code);
+      // Aquí atrapamos el error 400 y lo traducimos
+      let mensajeError =
+        "Ocurrió un problema con el servicio de autenticación.";
+
+      if (error.code === "auth/invalid-api-key")
+        mensajeError = "La API Key configurada es inválida.";
+      if (error.code === "auth/user-not-found")
+        mensajeError = "No existe una cuenta con este correo.";
+      if (error.code === "auth/wrong-password")
+        mensajeError = "La contraseña es incorrecta.";
+      if (error.code === "auth/network-request-failed")
+        mensajeError = "Error de red. Revisa tu conexión.";
+
+      Alert.alert("Error de Acceso", mensajeError);
+    }
   };
 
-  const handleRecuperarPassword = () => {
+  // Función para Recuperar Contraseña (LOPDP Friendly)
+  const handleRecuperarPassword = async () => {
     if (!email) {
       Alert.alert(
-        "Atención",
-        "Por favor ingresa tu correo electrónico para enviarte el enlace de recuperación.",
+        "Correo Necesario",
+        "Ingresa tu email para enviarte el enlace de restauración.",
       );
       return;
     }
 
-    sendPasswordResetEmail(auth, email)
-      .then(() => {
-        Alert.alert(
-          "Correo enviado",
-          "Revisa tu bandeja de entrada para restablecer tu contraseña.",
-        );
-      })
-      .catch((error) => {
-        Alert.alert("Error", "No se pudo enviar el correo: " + error.message);
-      });
+    try {
+      await sendPasswordResetEmail(auth, email);
+      Alert.alert(
+        "Verifica tu correo",
+        "Se ha enviado un enlace seguro para restablecer tu clave. Revisa también la carpeta de SPAM.",
+      );
+    } catch (error) {
+      Alert.alert(
+        "Error de Envío",
+        "No pudimos procesar la solicitud: " + error.message,
+      );
+    }
   };
 
   return (
@@ -73,11 +88,11 @@ const LoginScreen = () => {
     >
       <View style={styles.header}>
         <Text style={styles.logoText}>333K</Text>
-        <Text style={styles.subtitle}>Tu salud dental en buenas manos</Text>
+        <Text style={styles.subtitle}>Gestión Odontológica Profesional</Text>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.title}>Iniciar Sesión</Text>
+        <Text style={styles.title}>Bienvenido</Text>
 
         <TextInput
           style={styles.input}
@@ -88,7 +103,6 @@ const LoginScreen = () => {
           keyboardType="email-address"
         />
 
-        {/* CONTENEDOR DE PASSWORD CON ICONO */}
         <View style={styles.passwordContainer}>
           <TextInput
             style={styles.inputFlex}
@@ -104,27 +118,29 @@ const LoginScreen = () => {
             <MaterialCommunityIcons
               name={verPassword ? "eye-off" : "eye"}
               size={24}
-              color="#666"
+              color={COLORS.primaryGreen}
             />
           </TouchableOpacity>
         </View>
 
-        {/* RECUPERAR CONTRASEÑA */}
         <TouchableOpacity
           onPress={handleRecuperarPassword}
-          style={styles.forgotBtn}
+          style={styles.forgotContainer}
         >
           <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.button} onPress={handleLogin}>
-          <Text style={styles.buttonText}>ENTRAR</Text>
+          <Text style={styles.buttonText}>INICIAR SESIÓN</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => router.push("/register")}>
+        <TouchableOpacity
+          style={styles.registerLink}
+          onPress={() => router.push("/register")}
+        >
           <Text style={styles.linkText}>
-            ¿No tienes cuenta?{" "}
-            <Text style={{ fontWeight: "bold" }}>Regístrate aquí</Text>
+            ¿Aún no tienes cuenta?{" "}
+            <Text style={styles.boldText}>Regístrate</Text>
           </Text>
         </TouchableOpacity>
       </View>
@@ -134,27 +150,27 @@ const LoginScreen = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.primaryGreen },
-  header: { height: "35%", justifyContent: "center", alignItems: "center" },
-  logoText: { fontSize: 50, fontWeight: "bold", color: "#fff" },
-  subtitle: { color: "#fff", fontSize: 14, opacity: 0.9 },
+  header: { height: "30%", justifyContent: "center", alignItems: "center" },
+  logoText: { fontSize: 55, fontWeight: "bold", color: "#fff" },
+  subtitle: { color: "#fff", fontSize: 13, opacity: 0.8 },
   card: {
     flex: 1,
     backgroundColor: "#fff",
-    borderTopLeftRadius: 40,
-    borderTopRightRadius: 40,
-    padding: 30,
+    borderTopLeftRadius: 50,
+    borderTopRightRadius: 50,
+    padding: 35,
     alignItems: "center",
   },
   title: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: "bold",
     color: COLORS.darkGreen,
-    marginBottom: 30,
+    marginBottom: 25,
   },
   input: {
     width: "100%",
     height: 55,
-    backgroundColor: "#F0F0F0",
+    backgroundColor: "#F5F5F5",
     borderRadius: 15,
     paddingHorizontal: 20,
     marginBottom: 15,
@@ -162,40 +178,29 @@ const styles = StyleSheet.create({
   passwordContainer: {
     width: "100%",
     height: 55,
-    backgroundColor: "#F0F0F0",
+    backgroundColor: "#F5F5F5",
     borderRadius: 15,
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 10,
   },
-  inputFlex: {
-    flex: 1,
-    height: "100%",
-    paddingHorizontal: 20,
-  },
-  eyeIcon: {
-    paddingHorizontal: 15,
-  },
-  forgotBtn: {
-    alignSelf: "flex-end",
-    marginBottom: 20,
-  },
-  forgotText: {
-    color: COLORS.darkGreen,
-    fontSize: 13,
-    fontWeight: "500",
-  },
+  inputFlex: { flex: 1, height: "100%", paddingHorizontal: 20 },
+  eyeIcon: { paddingHorizontal: 15 },
+  forgotContainer: { alignSelf: "flex-end", marginVertical: 15 },
+  forgotText: { color: COLORS.primaryGreen, fontSize: 14, fontWeight: "600" },
   button: {
     width: "100%",
     height: 55,
     backgroundColor: COLORS.primaryGreen,
-    borderRadius: 15,
+    borderRadius: 18,
     justifyContent: "center",
     alignItems: "center",
-    elevation: 5,
+    elevation: 4,
+    marginTop: 10,
   },
   buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-  linkText: { marginTop: 20, color: COLORS.primaryGreen },
+  registerLink: { marginTop: 25 },
+  linkText: { color: "#666", fontSize: 14 },
+  boldText: { color: COLORS.primaryGreen, fontWeight: "bold" },
 });
 
 export default LoginScreen;
