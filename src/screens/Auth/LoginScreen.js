@@ -1,7 +1,12 @@
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import {
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+} from "firebase/auth";
 import { useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -13,23 +18,51 @@ import {
 import { auth } from "../../api/firebase.config";
 import { COLORS } from "../../constants/theme";
 
-const LoginScreen = ({ navigation }) => {
+const LoginScreen = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [verPassword, setVerPassword] = useState(false);
   const router = useRouter();
+
   const handleLogin = () => {
     if (!email || !password) {
-      alert("Por favor, ingresa tus credenciales");
+      Alert.alert("Aviso", "Por favor, ingresa tus credenciales");
       return;
     }
 
     signInWithEmailAndPassword(auth, email, password)
       .then((userCredential) => {
         console.log("Login exitoso:", userCredential.user.email);
+        // El router.replace se encargará de llevarlo al Home según su flujo
       })
       .catch((error) => {
-        console.error("Error en Firebase:", error.code);
-        alert("Error: Credenciales incorrectas o problema de red.");
+        let mensaje = "Credenciales incorrectas o problema de red.";
+        if (error.code === "auth/user-not-found")
+          mensaje = "El usuario no existe.";
+        if (error.code === "auth/wrong-password")
+          mensaje = "Contraseña incorrecta.";
+        Alert.alert("Error", mensaje);
+      });
+  };
+
+  const handleRecuperarPassword = () => {
+    if (!email) {
+      Alert.alert(
+        "Atención",
+        "Por favor ingresa tu correo electrónico para enviarte el enlace de recuperación.",
+      );
+      return;
+    }
+
+    sendPasswordResetEmail(auth, email)
+      .then(() => {
+        Alert.alert(
+          "Correo enviado",
+          "Revisa tu bandeja de entrada para restablecer tu contraseña.",
+        );
+      })
+      .catch((error) => {
+        Alert.alert("Error", "No se pudo enviar el correo: " + error.message);
       });
   };
 
@@ -39,7 +72,7 @@ const LoginScreen = ({ navigation }) => {
       style={styles.container}
     >
       <View style={styles.header}>
-        <Text style={styles.logoText}>BBBK</Text>
+        <Text style={styles.logoText}>333K</Text>
         <Text style={styles.subtitle}>Tu salud dental en buenas manos</Text>
       </View>
 
@@ -52,15 +85,37 @@ const LoginScreen = ({ navigation }) => {
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
+          keyboardType="email-address"
         />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Contraseña"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
+        {/* CONTENEDOR DE PASSWORD CON ICONO */}
+        <View style={styles.passwordContainer}>
+          <TextInput
+            style={styles.inputFlex}
+            placeholder="Contraseña"
+            secureTextEntry={!verPassword}
+            value={password}
+            onChangeText={setPassword}
+          />
+          <TouchableOpacity
+            onPress={() => setVerPassword(!verPassword)}
+            style={styles.eyeIcon}
+          >
+            <MaterialCommunityIcons
+              name={verPassword ? "eye-off" : "eye"}
+              size={24}
+              color="#666"
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* RECUPERAR CONTRASEÑA */}
+        <TouchableOpacity
+          onPress={handleRecuperarPassword}
+          style={styles.forgotBtn}
+        >
+          <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity style={styles.button} onPress={handleLogin}>
           <Text style={styles.buttonText}>ENTRAR</Text>
@@ -68,7 +123,8 @@ const LoginScreen = ({ navigation }) => {
 
         <TouchableOpacity onPress={() => router.push("/register")}>
           <Text style={styles.linkText}>
-            ¿No tienes cuenta? Regístrate aquí
+            ¿No tienes cuenta?{" "}
+            <Text style={{ fontWeight: "bold" }}>Regístrate aquí</Text>
           </Text>
         </TouchableOpacity>
       </View>
@@ -103,6 +159,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 15,
   },
+  passwordContainer: {
+    width: "100%",
+    height: 55,
+    backgroundColor: "#F0F0F0",
+    borderRadius: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  inputFlex: {
+    flex: 1,
+    height: "100%",
+    paddingHorizontal: 20,
+  },
+  eyeIcon: {
+    paddingHorizontal: 15,
+  },
+  forgotBtn: {
+    alignSelf: "flex-end",
+    marginBottom: 20,
+  },
+  forgotText: {
+    color: COLORS.darkGreen,
+    fontSize: 13,
+    fontWeight: "500",
+  },
   button: {
     width: "100%",
     height: 55,
@@ -110,11 +192,10 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 10,
     elevation: 5,
   },
   buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-  linkText: { marginTop: 20, color: COLORS.primaryGreen, fontWeight: "600" },
+  linkText: { marginTop: 20, color: COLORS.primaryGreen },
 });
 
 export default LoginScreen;
