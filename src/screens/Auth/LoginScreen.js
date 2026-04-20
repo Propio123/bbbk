@@ -59,10 +59,12 @@ const LoginScreen = () => {
 
   // Función para Recuperar Contraseña (LOPDP Friendly)
   const handleRecuperarPassword = async () => {
+    console.log("Intentando recuperar para:", email); // Debug en consola
+
     if (!email) {
       Alert.alert(
-        "Correo Necesario",
-        "Ingresa tu email para enviarte el enlace de restauración.",
+        "Dato necesario",
+        "Por favor, escribe tu correo electrónico primero.",
       );
       return;
     }
@@ -70,13 +72,14 @@ const LoginScreen = () => {
     try {
       await sendPasswordResetEmail(auth, email);
       Alert.alert(
-        "Verifica tu correo",
-        "Se ha enviado un enlace seguro para restablecer tu clave. Revisa también la carpeta de SPAM.",
+        "Enlace enviado",
+        "Revisa tu correo para restablecer la contraseña.",
       );
     } catch (error) {
+      console.error("Error en reset:", error.code);
       Alert.alert(
-        "Error de Envío",
-        "No pudimos procesar la solicitud: " + error.message,
+        "Error",
+        "No se pudo enviar el correo. Verifique que el usuario existe.",
       );
     }
   };
@@ -124,12 +127,12 @@ const LoginScreen = () => {
         </View>
 
         <TouchableOpacity
-          onPress={handleRecuperarPassword}
-          style={styles.forgotContainer}
+          onPress={handleRecuperarPassword} // Verifique que NO tenga paréntesis aquí
+          style={styles.forgotBtn}
+          activeOpacity={0.7} // Esto ayuda a ver visualmente si el clic se registra
         >
           <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
         </TouchableOpacity>
-
         <TouchableOpacity style={styles.button} onPress={handleLogin}>
           <Text style={styles.buttonText}>INICIAR SESIÓN</Text>
         </TouchableOpacity>
