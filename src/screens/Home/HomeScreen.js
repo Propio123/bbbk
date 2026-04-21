@@ -56,7 +56,7 @@ const HomeScreen = () => {
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.body}>
           {/* Slogan justo debajo del inicio de la tarjeta blanca */}
-          <Text style={styles.sloganText}>"Sonriendo junto a ti"</Text>
+          <Text style={styles.sloganText}>Sonriendo junto a ti</Text>
 
           {/* Saludo dinámico */}
           <View style={styles.welcomeContainer}>
