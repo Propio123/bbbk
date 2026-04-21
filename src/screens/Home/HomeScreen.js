@@ -53,10 +53,9 @@ const HomeScreen = () => {
       <ScrollView>
         {/* Header con el estilo curvo */}
         <View style={styles.header}>
-          <View style={styles.logoPlaceholder}></View>
+          <ScreenWrapper />
           <Text style={styles.slogan}>Sonriendo junto a ti</Text>
         </View>
-        <ScreenWrapper />
 
         {/* Contenido Principal */}
         <View style={styles.body}>
