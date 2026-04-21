@@ -1,20 +1,20 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { doc, getDoc } from "firebase/firestore";
-import React, { useEffect, useState } from "react"; // ✅ Agregamos imports de React
+import React, { useEffect, useState } from "react";
 import {
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+
+// Importamos el ScreenWrapper que ya tiene el logo grande y cuadrado
 import { ScreenWrapper } from "../../../components/ScreenWrapper";
-import { auth, db } from "../../api/firebase.config"; // ✅ Asegúrate de que la ruta sea correcta
+import { auth, db } from "../../api/firebase.config";
 import { COLORS } from "../../constants/theme";
 
-// Componente de botón reutilizable
 const MenuButton = ({ icon, label, onPress }) => (
   <TouchableOpacity style={styles.menuItem} onPress={onPress}>
     <View style={styles.iconContainer}>
@@ -39,7 +39,6 @@ const HomeScreen = () => {
         const docRef = doc(db, "users", user.uid);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists() && docSnap.data().rol === "admin") {
-          // Si es admin y cayó aquí, mandarlo a su panel de inmediato
           router.replace("/admin");
         } else if (docSnap.exists()) {
           setUserData(docSnap.data());
@@ -48,35 +47,36 @@ const HomeScreen = () => {
     };
     checkAdminRedirection();
   }, []);
+
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView>
-        {/* Header con el estilo curvo */}
-        <View style={styles.header}>
-          <ScreenWrapper />
-          <Text style={styles.slogan}>Sonriendo junto a ti</Text>
-        </View>
-
-        {/* Contenido Principal */}
+    /* PASO 1: Envolvemos todo en el ScreenWrapper. 
+       Él se encarga del fondo verde superior y del logo cuadrado. 
+    */
+    <ScreenWrapper showBack={false}>
+      <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.body}>
-          {/* Saludo dinámico con el nombre de Firestore */}
-          <Text style={styles.welcomeTitle}>
-            Hola, {userData ? userData.nombre : "Bienvenido"}
-            {"\n"}
-            <Text style={styles.subtitle}>Tu Clínica Dental Digital</Text>
-          </Text>
+          {/* Slogan justo debajo del inicio de la tarjeta blanca */}
+          <Text style={styles.sloganText}>"Sonriendo junto a ti"</Text>
 
-          {/* Primera Fila de Botones */}
+          {/* Saludo dinámico */}
+          <View style={styles.welcomeContainer}>
+            <Text style={styles.welcomeTitle}>
+              Hola, {userData ? userData.nombre : "Bienvenido"}
+            </Text>
+            <Text style={styles.subtitle}>Tu Clínica Dental Digital</Text>
+          </View>
+
+          {/* Grid de Servicios */}
           <View style={styles.grid}>
             <MenuButton
               icon="calendar-clock"
               label="AGENDAR CITA"
-              onPress={() => router.push("/agendar")} // ✅ Corregido a router
+              onPress={() => router.push("/agendar")}
             />
             <MenuButton
               icon="clipboard-check"
               label="MIS CITAS"
-              onPress={() => router.push("/miscitas")} // ✅ Corregido a router
+              onPress={() => router.push("/miscitas")}
             />
             <MenuButton
               icon="history"
@@ -85,7 +85,6 @@ const HomeScreen = () => {
             />
           </View>
 
-          {/* Segunda Fila de Botones */}
           <View style={[styles.grid, { marginTop: 25 }]}>
             <MenuButton
               icon="tooth-outline"
@@ -95,78 +94,79 @@ const HomeScreen = () => {
             <MenuButton
               icon="account-circle-outline"
               label="PERFIL"
-              onPress={() => router.push("/perfil")} // ✅ Corregido a router
+              onPress={() => router.push("/perfil")}
+            />
+            <MenuButton
+              icon="information-outline"
+              label="AYUDA"
+              onPress={() => console.log("Ayuda")}
             />
           </View>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenWrapper>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  header: {
-    height: 280,
-    backgroundColor: COLORS.primaryGreen,
-    borderBottomLeftRadius: 80,
-    borderBottomRightRadius: 80,
-    justifyContent: "center",
+  body: {
+    padding: 20,
     alignItems: "center",
   },
-  logoPlaceholder: {
-    width: 140,
-    height: 140,
-    backgroundColor: "#fff",
-    borderRadius: 70,
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
+  sloganText: {
+    color: COLORS.primaryGreen,
+    fontSize: 14,
+    fontWeight: "600",
+    fontStyle: "italic",
+    marginBottom: 20,
+    opacity: 0.8,
   },
-  logoText: { fontSize: 32, fontWeight: "bold", color: COLORS.primaryGreen },
-  slogan: { color: "#fff", marginTop: 15, fontWeight: "600", fontSize: 16 },
-  body: { padding: 20, alignItems: "center" },
+  welcomeContainer: {
+    alignItems: "center",
+    marginBottom: 35,
+  },
   welcomeTitle: {
     fontSize: 24,
-    textAlign: "center",
     color: "#333",
     fontWeight: "bold",
-    marginBottom: 40,
-    marginTop: 10,
+    textAlign: "center",
   },
   subtitle: {
-    fontSize: 16,
-    fontWeight: "normal",
+    fontSize: 15,
     color: "#666",
+    marginTop: 5,
   },
   grid: {
     flexDirection: "row",
     justifyContent: "space-between",
     width: "100%",
-    paddingHorizontal: 10,
   },
-  menuItem: { alignItems: "center", width: "30%" },
+  menuItem: {
+    alignItems: "center",
+    width: "30%",
+  },
   iconContainer: {
-    width: 75,
-    height: 75,
+    width: 80,
+    height: 80,
     backgroundColor: "#fff",
-    borderRadius: 22,
+    borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
-    elevation: 4,
+    elevation: 5,
     shadowColor: "#000",
     shadowOpacity: 0.1,
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 5,
     marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#F0F0F0",
   },
   menuLabel: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: "bold",
     color: "#444",
     textAlign: "center",
+    textTransform: "uppercase",
   },
 });
 
