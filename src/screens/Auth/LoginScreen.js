@@ -26,8 +26,9 @@ const LoginScreen = () => {
 
   // Función para Iniciar Sesión
   const handleLogin = async () => {
+    // 1. Validación de cliente inmediata
     if (!email || !password) {
-      Alert.alert("Campos vacíos", "Por favor, completa todos los campos.");
+      Alert.alert("Atención", "Por favor, ingresa correo y contraseña.");
       return;
     }
 
@@ -37,34 +38,37 @@ const LoginScreen = () => {
         email,
         password,
       );
-      console.log("Acceso concedido:", userCredential.user.email);
+      console.log("Login exitoso");
+      // Aquí el router hará su trabajo automáticamente
     } catch (error) {
-      console.log("Error detallado:", error.code);
-      // Aquí atrapamos el error 400 y lo traducimos
-      let mensajeError =
-        "Ocurrió un problema con el servicio de autenticación.";
+      console.error("Código de error Firebase:", error.code);
 
-      if (error.code === "auth/invalid-api-key")
-        mensajeError = "La API Key configurada es inválida.";
-      if (error.code === "auth/user-not-found")
-        mensajeError = "No existe una cuenta con este correo.";
-      if (error.code === "auth/wrong-password")
-        mensajeError = "La contraseña es incorrecta.";
-      if (error.code === "auth/network-request-failed")
-        mensajeError = "Error de red. Revisa tu conexión.";
+      // 2. Mapeo explícito de errores para que SIEMPRE diga algo
+      let mensaje = "No se pudo iniciar sesión. Verifique su conexión.";
 
-      Alert.alert("Error de Acceso", mensajeError);
+      if (
+        error.code === "auth/invalid-credential" ||
+        error.code === "auth/wrong-password" ||
+        error.code === "auth/user-not-found"
+      ) {
+        mensaje = "Usuario o contraseña incorrectos.";
+      } else if (error.code === "auth/invalid-email") {
+        mensaje = "El formato del correo electrónico no es válido.";
+      } else if (error.code === "auth/too-many-requests") {
+        mensaje = "Demasiados intentos. Intente más tarde.";
+      }
+
+      Alert.alert("Error de Acceso", mensaje);
     }
   };
 
-  // Función para Recuperar Contraseña (LOPDP Friendly)
   const handleRecuperarPassword = async () => {
-    console.log("Intentando recuperar para:", email); // Debug en consola
+    console.log("Iniciando recuperación para:", email);
 
     if (!email) {
       Alert.alert(
-        "Dato necesario",
-        "Por favor, escribe tu correo electrónico primero.",
+        "Dato requerido",
+        "Escriba su correo electrónico para enviarle el enlace.",
       );
       return;
     }
@@ -72,18 +76,24 @@ const LoginScreen = () => {
     try {
       await sendPasswordResetEmail(auth, email);
       Alert.alert(
-        "Enlace enviado",
-        "Revisa tu correo para restablecer la contraseña.",
+        "Correo enviado",
+        "Se ha enviado un enlace de restauración a " +
+          email +
+          ". Si no lo ve, revise la carpeta de SPAM.",
       );
     } catch (error) {
-      console.error("Error en reset:", error.code);
-      Alert.alert(
-        "Error",
-        "No se pudo enviar el correo. Verifique que el usuario existe.",
-      );
+      console.error("Error en recuperación:", error.code);
+
+      let mensaje = "No se pudo enviar el correo de recuperación.";
+      if (error.code === "auth/user-not-found") {
+        mensaje = "No existe un usuario registrado con ese correo.";
+      } else if (error.code === "auth/invalid-email") {
+        mensaje = "El formato del correo es incorrecto.";
+      }
+
+      Alert.alert("Recuperación", mensaje);
     }
   };
-
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
