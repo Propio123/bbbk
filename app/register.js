@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { useState } from "react";
@@ -16,6 +17,7 @@ import { auth, db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
 
 const Register = ({ navigation }) => {
+  const router = useRouter();
   const [formData, setFormData] = useState({
     nombre: "",
     telefono: "",
@@ -77,12 +79,12 @@ const Register = ({ navigation }) => {
     >
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={() => router.back()}
           style={styles.backButton}
         >
           <Text style={{ color: "#fff", fontWeight: "bold" }}>← Volver</Text>
         </TouchableOpacity>
-        <Text style={styles.logoText}>333K</Text>
+        <Text style={styles.logoText}>BBBK</Text>
       </View>
 
       <View style={styles.card}>
