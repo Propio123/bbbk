@@ -22,7 +22,6 @@ import {
   View,
 } from "react-native";
 import { Calendar, LocaleConfig } from "react-native-calendars";
-import { ScreenWrapper } from ".././components/ScreenWrapper";
 import { auth, db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
 
@@ -246,7 +245,7 @@ const AgendarCitaClient = () => {
         creadoEn: serverTimestamp(),
       });
 
-      const msg = `🦷 *Nueva Solicitud 333K*\n\nServicio: ${servicioSel.nombre}\nFecha: ${fechaSel}\nHora: ${horaSel}`;
+      const msg = `🦷 *Nueva Solicitud BBBK*\n\nServicio: ${servicioSel.nombre}\nFecha: ${fechaSel}\nHora: ${horaSel}`;
       await Linking.openURL(
         `whatsapp://send?phone=593969743150&text=${encodeURIComponent(msg)}`,
       );
@@ -271,7 +270,6 @@ const AgendarCitaClient = () => {
               onPress={() => router.back()}
               style={styles.iconBtn}
             >
-              <ScreenWrapper />
               <MaterialCommunityIcons
                 name="arrow-left"
                 size={26}

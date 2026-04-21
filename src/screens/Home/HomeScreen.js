@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { ScreenWrapper } from "../../../components/ScreenWrapper";
 import { auth, db } from "../../api/firebase.config"; // ✅ Asegúrate de que la ruta sea correcta
 import { COLORS } from "../../constants/theme";
 
@@ -53,7 +54,7 @@ const HomeScreen = () => {
         {/* Header con el estilo curvo */}
         <View style={styles.header}>
           <View style={styles.logoPlaceholder}>
-            <Text style={styles.logoText}>BBBK</Text>
+            <ScreenWrapper />
           </View>
           <Text style={styles.slogan}>Sonriendo junto a ti</Text>
         </View>
