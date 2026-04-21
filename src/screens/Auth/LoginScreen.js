@@ -8,7 +8,6 @@ import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Platform,
   StyleSheet,
   Text,
@@ -16,6 +15,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+// IMPORTANTE: El ScreenWrapper ahora envuelve a todo el contenido
 import { ScreenWrapper } from "../../../components/ScreenWrapper";
 import { auth } from "../../api/firebase.config";
 import { COLORS } from "../../constants/theme";
@@ -27,7 +28,6 @@ const LoginScreen = () => {
   const [cargando, setCargando] = useState(false);
   const router = useRouter();
 
-  // Función Multiplataforma para Alertas (Solución para Vercel/Web)
   const mostrarNotificacion = (titulo, mensaje) => {
     if (Platform.OS === "web") {
       window.alert(`${titulo}\n${mensaje}`);
@@ -44,26 +44,14 @@ const LoginScreen = () => {
       );
       return;
     }
-
     setCargando(true);
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
-      // El observador de auth en su _layout se encargará de redirigir
     } catch (error) {
       console.log("Error Firebase:", error.code);
-      let mensaje = "Error de conexión con el servidor.";
-
-      if (
-        error.code === "auth/invalid-credential" ||
-        error.code === "auth/wrong-password"
-      ) {
+      let mensaje = "Error de conexión.";
+      if (error.code === "auth/invalid-credential")
         mensaje = "Usuario o contraseña incorrectos.";
-      } else if (error.code === "auth/invalid-email") {
-        mensaje = "El formato del correo es inválido.";
-      } else if (error.code === "auth/too-many-requests") {
-        mensaje = "Cuenta bloqueada temporalmente por exceso de intentos.";
-      }
-
       mostrarNotificacion("Error de Acceso", mensaje);
     } finally {
       setCargando(false);
@@ -74,37 +62,24 @@ const LoginScreen = () => {
     if (!email) {
       mostrarNotificacion(
         "Dato Necesario",
-        "Escriba su correo electrónico para enviarle el enlace.",
+        "Escriba su correo electrónico primero.",
       );
       return;
     }
-
     try {
       await sendPasswordResetEmail(auth, email.trim());
-      mostrarNotificacion(
-        "Correo Enviado",
-        "Revise su bandeja de entrada (y SPAM) para restablecer su clave.",
-      );
+      mostrarNotificacion("Correo Enviado", "Revise su bandeja de entrada.");
     } catch (error) {
-      let mensaje = "No se pudo procesar la solicitud.";
-      if (error.code === "auth/user-not-found")
-        mensaje = "Este correo no está registrado.";
-      mostrarNotificacion("Recuperación", mensaje);
+      mostrarNotificacion("Recuperación", "No se pudo enviar el correo.");
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={styles.container}
-    >
-      <View style={styles.header}>
-        <ScreenWrapper />
-        <Text style={styles.subtitle}>Tu salud dental en buenas manos</Text>
-      </View>
-
-      <View style={styles.card}>
+    // EL SCREENWRAPPER ES EL PADRE DE TODO
+    <ScreenWrapper showBack={false}>
+      <View style={styles.innerContainer}>
         <Text style={styles.title}>Iniciar Sesión</Text>
+        <Text style={styles.subtitle}>Tu salud dental en buenas manos</Text>
 
         <TextInput
           style={styles.input}
@@ -164,27 +139,28 @@ const LoginScreen = () => {
           </Text>
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+    </ScreenWrapper>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.primaryGreen },
-  header: { height: "35%", justifyContent: "center", alignItems: "center" },
-  subtitle: { color: "#fff", fontSize: 14, opacity: 0.9, marginTop: 5 },
-  card: {
-    flex: 1,
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 45,
-    borderTopRightRadius: 45,
-    padding: 35,
+  // Eliminamos el container verde porque ya lo tiene el ScreenWrapper
+  innerContainer: {
+    paddingHorizontal: 25,
+    paddingTop: 10,
     alignItems: "center",
   },
   title: {
     fontSize: 26,
     fontWeight: "bold",
     color: COLORS.darkGreen,
+    marginBottom: 10,
+  },
+  subtitle: {
+    color: "#666",
+    fontSize: 14,
     marginBottom: 30,
+    textAlign: "center",
   },
   input: {
     width: "100%",
@@ -214,10 +190,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
   },
   buttonText: { color: "#fff", fontWeight: "bold", fontSize: 17 },
   linkText: { color: "#666", fontSize: 14 },
