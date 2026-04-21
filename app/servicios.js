@@ -1,14 +1,14 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
-    FlatList,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  FlatList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { ScreenWrapper } from "../../components/ScreenWrapper";
-import { COLORS } from "../../constants/theme";
+import { ScreenWrapper } from "../components/ScreenWrapper";
+import { COLORS } from "../constants/theme";
 
 const SERVICIOS_DATA = [
   {

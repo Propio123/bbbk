@@ -97,7 +97,7 @@ const HomeScreen = () => {
             />
             <MenuButton
               icon="whatsapp"
-              label="SOPORTE"
+              label="INFO"
               onPress={() => router.push("/info")} // O vincular directo a WhatsApp
             />
           </View>
