@@ -1,173 +1,91 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { doc, getDoc } from "firebase/firestore";
-import React, { useEffect, useState } from "react";
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import React, { useState } from "react";
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { COLORS } from "../.././constants/theme";
 
-// Importamos el ScreenWrapper que ya tiene el logo grande y cuadrado
-import { ScreenWrapper } from "../../../components/ScreenWrapper";
-import { auth, db } from "../../api/firebase.config";
-import { COLORS } from "../../constants/theme";
+export const RatingSection = () => {
+  const [rating, setRating] = useState(0);
 
-const MenuButton = ({ icon, label, onPress }) => (
-  <TouchableOpacity style={styles.menuItem} onPress={onPress}>
-    <View style={styles.iconContainer}>
-      <MaterialCommunityIcons
-        name={icon}
-        size={35}
-        color={COLORS.primaryGreen}
-      />
-    </View>
-    <Text style={styles.menuLabel}>{label}</Text>
-  </TouchableOpacity>
-);
-
-const HomeScreen = () => {
-  const router = useRouter();
-  const [userData, setUserData] = useState(null);
-
-  useEffect(() => {
-    const checkAdminRedirection = async () => {
-      const user = auth.currentUser;
-      if (user) {
-        const docRef = doc(db, "users", user.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists() && docSnap.data().rol === "admin") {
-          router.replace("/admin");
-        } else if (docSnap.exists()) {
-          setUserData(docSnap.data());
-        }
-      }
-    };
-    checkAdminRedirection();
-  }, []);
+  const handleRating = (value) => {
+    setRating(value);
+    // Aquí podrías enviar el dato a Firestore
+    Alert.alert(
+      "¡Gracias!",
+      `Has calificado nuestra atención con ${value} estrellas. Tu opinión es muy importante para nosotros.`,
+      [{ text: "OK" }],
+    );
+  };
 
   return (
-    /* PASO 1: Envolvemos todo en el ScreenWrapper. 
-       Él se encarga del fondo verde superior y del logo cuadrado. 
-    */
-    <ScreenWrapper showBack={false}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.body}>
-          {/* Slogan justo debajo del inicio de la tarjeta blanca */}
-          <Text style={styles.sloganText}>Sonriendo junto a ti</Text>
+    <View style={styles.card}>
+      <Text style={styles.title}>¿Cómo fue tu experiencia?</Text>
+      <Text style={styles.subtitle}>Califica nuestra atención</Text>
 
-          {/* Saludo dinámico */}
-          <View style={styles.welcomeContainer}>
-            <Text style={styles.welcomeTitle}>
-              Hola, {userData ? userData.nombre : "Bienvenido"}
-            </Text>
-            <Text style={styles.subtitle}>Tu Clínica Dental Digital</Text>
-          </View>
+      <View style={styles.starsRow}>
+        {[1, 2, 3, 4, 5].map((star) => (
+          <TouchableOpacity
+            key={star}
+            onPress={() => handleRating(star)}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons
+              name={star <= rating ? "star" : "star-outline"}
+              size={40}
+              color={star <= rating ? "#FFD700" : "#CCC"}
+              style={styles.starIcon}
+            />
+          </TouchableOpacity>
+        ))}
+      </View>
 
-          {/* Grid de Servicios */}
-          <View style={styles.grid}>
-            <MenuButton
-              icon="calendar-clock"
-              label="AGENDAR CITA"
-              onPress={() => router.push("/agendar")}
-            />
-            <MenuButton
-              icon="clipboard-check"
-              label="MIS CITAS"
-              onPress={() => router.push("/miscitas")}
-            />
-            <MenuButton
-              icon="history"
-              label="HISTORIAL"
-              onPress={() => console.log("Historial")}
-            />
-          </View>
-
-          <View style={[styles.grid, { marginTop: 25 }]}>
-            <MenuButton
-              icon="tooth-outline"
-              label="SERVICIOS"
-              onPress={() => console.log("Servicios")}
-            />
-            <MenuButton
-              icon="account-circle-outline"
-              label="PERFIL"
-              onPress={() => router.push("/perfil")}
-            />
-            <MenuButton
-              icon="information-outline"
-              label="AYUDA"
-              onPress={() => console.log("Ayuda")}
-            />
-          </View>
-        </View>
-      </ScrollView>
-    </ScreenWrapper>
+      {rating > 0 && (
+        <Text style={styles.thanksText}>
+          {rating === 5
+            ? "¡Nos alegra que te encantara! ✨"
+            : "Gracias por tu feedback."}
+        </Text>
+      )}
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  body: {
-    padding: 20,
-    alignItems: "center",
-  },
-  sloganText: {
-    color: COLORS.primaryGreen,
-    fontSize: 14,
-    fontWeight: "600",
-    fontStyle: "italic",
-    marginBottom: 20,
-    opacity: 0.8,
-  },
-  welcomeContainer: {
-    alignItems: "center",
-    marginBottom: 35,
-  },
-  welcomeTitle: {
-    fontSize: 24,
-    color: "#333",
-    fontWeight: "bold",
-    textAlign: "center",
-  },
-  subtitle: {
-    fontSize: 15,
-    color: "#666",
-    marginTop: 5,
-  },
-  grid: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "100%",
-  },
-  menuItem: {
-    alignItems: "center",
-    width: "30%",
-  },
-  iconContainer: {
-    width: 80,
-    height: 80,
+  card: {
     backgroundColor: "#fff",
+    padding: 25,
     borderRadius: 20,
-    justifyContent: "center",
     alignItems: "center",
-    elevation: 5,
+    width: "90%",
+    alignSelf: "center",
+    marginTop: 20,
+    elevation: 4,
     shadowColor: "#000",
     shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 5,
-    marginBottom: 10,
+    shadowRadius: 10,
     borderWidth: 1,
     borderColor: "#F0F0F0",
   },
-  menuLabel: {
-    fontSize: 11,
+  title: {
+    fontSize: 18,
     fontWeight: "bold",
-    color: "#444",
-    textAlign: "center",
-    textTransform: "uppercase",
+    color: "#333",
+  },
+  subtitle: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 15,
+  },
+  starsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+  },
+  starIcon: {
+    marginHorizontal: 5,
+  },
+  thanksText: {
+    marginTop: 15,
+    fontSize: 14,
+    color: COLORS.primaryGreen,
+    fontWeight: "600",
   },
 });
-
-export default HomeScreen;
