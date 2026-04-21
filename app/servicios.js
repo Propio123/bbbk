@@ -53,7 +53,7 @@ const SERVICIOS_DATA = [
   },
 ];
 
-const ServiciosScreen = () => {
+const Servicios = () => {
   const router = useRouter();
 
   const renderServicio = ({ item }) => (
@@ -179,4 +179,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default ServiciosScreen;
+export default Servicios;

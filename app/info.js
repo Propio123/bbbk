@@ -32,7 +32,7 @@ const InfoItem = ({ icon, title, subtitle, onPress, color = "#499A47" }) => (
   </TouchableOpacity>
 );
 
-const InfoScreen = () => {
+const Info = () => {
   const [rating, setRating] = useState(0);
   const direccion = "Manuel de la Chica Narvaez y Velasco 8-63, Ibarra 100150";
   const telefono = "(06) 261-0657";
@@ -298,4 +298,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default InfoScreen;
+export default Info;
