@@ -17,7 +17,6 @@ export const ScreenWrapper = ({ children, showBack = false }) => {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]}>
-      {/* Ajuste para la barra de estado en Android */}
       <StatusBar barStyle="light-content" backgroundColor={bgColor} />
 
       <View style={styles.headerContainer}>
@@ -30,7 +29,8 @@ export const ScreenWrapper = ({ children, showBack = false }) => {
           </TouchableOpacity>
         )}
 
-        <View style={styles.logoContainer}>
+        {/* Contenedor del Logo Llamativo */}
+        <View style={styles.logoBadge}>
           <Image
             source={require("../assets/logo.png")}
             style={styles.logo}
@@ -40,7 +40,9 @@ export const ScreenWrapper = ({ children, showBack = false }) => {
       </View>
 
       {/* Contenedor Blanco Semiredondo */}
-      <View style={styles.content}>{children}</View>
+      <View style={styles.content}>
+        <View style={styles.innerContent}>{children}</View>
+      </View>
     </SafeAreaView>
   );
 };
@@ -48,20 +50,19 @@ export const ScreenWrapper = ({ children, showBack = false }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // Evita saltos visuales en Android con el SafeAreaView
     paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
   headerContainer: {
-    height: 80, // Un poco más de altura para que el logo respire
-    flexDirection: "row",
+    height: 120, // Aumentamos la altura para acomodar el badge
+    justifyContent: "center",
     alignItems: "center",
-    justifyContent: "center", // Centra el contenido principal
-    paddingHorizontal: 20,
+    zIndex: 10,
   },
   backButton: {
-    position: "absolute", // Clave: saca el botón del flujo para no mover el logo
+    position: "absolute",
     left: 20,
-    zIndex: 10,
+    top: 30, // Ajustado por la nueva altura del header
+    zIndex: 20,
     padding: 10,
   },
   backText: {
@@ -69,24 +70,38 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "bold",
   },
-  logoContainer: {
-    alignItems: "center",
+  logoBadge: {
+    width: 100, // Tamaño más grande para logo cuadrado
+    height: 100,
+    backgroundColor: "#fff",
+    borderRadius: 50, // Lo hace perfectamente circular
     justifyContent: "center",
+    alignItems: "center",
+    // Sombra para dar relieve
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 8,
+    borderWidth: 4,
+    borderColor: "rgba(255,255,255,0.3)", // Un pequeño borde sutil
+    marginTop: 20,
   },
   logo: {
-    width: 140,
-    height: 50,
+    width: 75, // Ajuste interno
+    height: 75,
   },
   content: {
     flex: 1,
     backgroundColor: "#fff",
-    borderTopLeftRadius: 40, // Radio más pronunciado para elegancia
+    borderTopLeftRadius: 40,
     borderTopRightRadius: 40,
-    paddingTop: 20, // Espaciado interno para que el contenido no pegue arriba
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 10, // Sombra para Android
+    // Este margen negativo hace que el círculo del logo se "traslape" con la tarjeta blanca
+    marginTop: -20,
+    zIndex: 5,
+  },
+  innerContent: {
+    flex: 1,
+    paddingTop: 30, // Espacio para que el contenido no choque con la curva
   },
 });

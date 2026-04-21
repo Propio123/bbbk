@@ -56,6 +56,7 @@ const HomeScreen = () => {
           <View style={styles.logoPlaceholder}></View>
           <Text style={styles.slogan}>Sonriendo junto a ti</Text>
         </View>
+        <ScreenWrapper />
 
         {/* Contenido Principal */}
         <View style={styles.body}>
@@ -99,7 +100,6 @@ const HomeScreen = () => {
             />
           </View>
         </View>
-        <ScreenWrapper />
       </ScrollView>
     </SafeAreaView>
   );
