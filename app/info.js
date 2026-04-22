@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import { ScreenWrapper } from "../components/ScreenWrapper";
-import { COLORS } from "../constants/theme";
+import { COLORS } from "../src/constants/theme";
 
 const InfoItem = ({ icon, title, subtitle, onPress, color = "#499A47" }) => (
   <TouchableOpacity
