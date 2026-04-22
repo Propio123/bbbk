@@ -88,7 +88,7 @@ const HomeScreen = () => {
             <MenuButton
               icon="tooth-outline"
               label="SERVICIOS"
-              onPress={() => router.push("/agendar")}
+              onPress={() => router.push("/servicios")}
             />
             <MenuButton
               icon="account-circle-outline"

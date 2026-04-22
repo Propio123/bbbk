@@ -8,7 +8,7 @@ import {
   View,
 } from "react-native";
 import { ScreenWrapper } from "../components/ScreenWrapper";
-import { COLORS } from "../constants/theme";
+import { COLORS } from "../src/constants/theme";
 
 const SERVICIOS_DATA = [
   {
