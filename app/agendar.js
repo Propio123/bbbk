@@ -153,20 +153,26 @@ const AgendarCitaClient = () => {
   };
 
   // 1. ESCUCHA DE OCUPACIÓN
+  // 1. ESCUCHA DE OCUPACIÓN DINÁMICA
   useEffect(() => {
-    if (!fechaSel) return;
+    // Solo escuchamos si hay fecha Y un servicio seleccionado (para saber quién es el médico)
+    if (!fechaSel || !servicioSel) return;
+
     const q = query(
       collection(db, "citas"),
       where("fecha", "==", fechaSel),
-      where("medico", "==", "Dr. Chávez"),
+      where("medico", "==", servicioSel.medico), // <--- Filtro dinámico por médico
+      where("estado", "in", ["pendiente", "confirmada"]), // Filtramos citas válidas
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const occupied = [];
       snapshot.docs.forEach((doc) => {
         const data = doc.data();
+        // Calculamos cuántos bloques de 15 min ocupa la cita
         const numSlots = Math.ceil((data.duracion || 15) / 15);
         let [h, m] = data.hora.split(":").map(Number);
+
         for (let i = 0; i < numSlots; i++) {
           occupied.push(
             `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`,
@@ -179,9 +185,19 @@ const AgendarCitaClient = () => {
         }
       });
       setBloquesOcupados(occupied);
+
+      // VALIDACIÓN AUTOMÁTICA: Si la hora ya seleccionada ahora está ocupada por el nuevo médico, la reseteamos
+      if (horaSel && occupied.includes(horaSel)) {
+        setHoraSel(null);
+        Alert.alert(
+          "Aviso",
+          `El ${servicioSel.medico} no está disponible a las ${horaSel}. Por favor selecciona otro horario.`,
+        );
+      }
     });
+
     return () => unsubscribe();
-  }, [fechaSel]);
+  }, [fechaSel, servicioSel]); // <--- Se dispara al cambiar de servicio
 
   // 2. GENERADOR DE HORARIOS (Lógica Local de Ibarra)
   const horariosFiltrados = useMemo(() => {
