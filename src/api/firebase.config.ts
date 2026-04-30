@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { doc, getFirestore, increment, updateDoc } from "firebase/firestore";
 
 // Estos datos los sacas de "Configuración del proyecto" en la consola de Firebase
 const firebaseConfig = {
@@ -19,3 +19,19 @@ const app = initializeApp(firebaseConfig);
 // Exportamos los servicios para usarlos en toda la app
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+const procesarAtencionRealizada = async (
+  userId: string,
+  millasDigitadas: number,
+) => {
+  const userRef = doc(db, "usuarios", userId);
+
+  try {
+    await updateDoc(userRef, {
+      millas: increment(millasDigitadas), // Incrementa atómicamente
+      // Aquí podrías añadir lógica para cambiar 'tipoCliente' si supera X millas
+    });
+    console.log("Millas acreditadas correctamente.");
+  } catch (error) {
+    console.error("Error al actualizar puntos:", error);
+  }
+};

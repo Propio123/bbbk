@@ -1,6 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { signOut } from "firebase/auth";
 import {
   addDoc,
   collection,
@@ -137,7 +136,7 @@ const SERVICIOS = [
     id: "adop",
     nombre: "Odontopediatría",
     duracion: 60,
-    medico: "Dra.Sofía Benavides",
+    medico: "Dra. Sofía Benavides",
     img: {
       uri: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQdw1rCOOQ4GmqRr7LCRE9MmB8GJtgpydrJSg&s",
     },
@@ -155,30 +154,26 @@ const AgendarCitaClient = () => {
 
   const estaListo = servicioSel && fechaSel && horaSel;
 
-  // Obtención de fecha local actual YYYY-MM-DD
   const getHoyLocal = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
 
-  // 1. ESCUCHA DE OCUPACIÓN
-  // 1. ESCUCHA DE OCUPACIÓN DINÁMICA
+  // 1. Escucha de ocupación en tiempo real por médico y fecha
   useEffect(() => {
-    // Solo escuchamos si hay fecha Y un servicio seleccionado (para saber quién es el médico)
     if (!fechaSel || !servicioSel) return;
 
     const q = query(
       collection(db, "citas"),
       where("fecha", "==", fechaSel),
-      where("medico", "==", servicioSel.medico), // <--- Filtro dinámico por médico
-      where("estado", "in", ["pendiente", "confirmada"]), // Filtramos citas válidas
+      where("medico", "==", servicioSel.medico),
+      where("estado", "in", ["pendiente", "confirmada"]),
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const occupied = [];
       snapshot.docs.forEach((doc) => {
         const data = doc.data();
-        // Calculamos cuántos bloques de 15 min ocupa la cita
         const numSlots = Math.ceil((data.duracion || 15) / 15);
         let [h, m] = data.hora.split(":").map(Number);
 
@@ -195,26 +190,24 @@ const AgendarCitaClient = () => {
       });
       setBloquesOcupados(occupied);
 
-      // VALIDACIÓN AUTOMÁTICA: Si la hora ya seleccionada ahora está ocupada por el nuevo médico, la reseteamos
       if (horaSel && occupied.includes(horaSel)) {
         setHoraSel(null);
         Alert.alert(
           "Aviso",
-          `El ${servicioSel.medico} no está disponible a las ${horaSel}. Por favor selecciona otro horario.`,
+          `El horario de las ${horaSel} ya no está disponible para el ${servicioSel.medico}.`,
         );
       }
     });
 
     return () => unsubscribe();
-  }, [fechaSel, servicioSel]); // <--- Se dispara al cambiar de servicio
+  }, [fechaSel, servicioSel]);
 
-  // 2. GENERADOR DE HORARIOS (Lógica Local de Ibarra)
+  // 2. Generación de horarios disponibles (8:00 AM - 6:00 PM)
   const horariosFiltrados = useMemo(() => {
     const slots = [];
     const ahora = new Date();
     const hoyLocal = getHoyLocal();
     const esHoy = fechaSel === hoyLocal;
-
     const horaActual = ahora.getHours();
     const minActual = ahora.getMinutes();
 
@@ -222,36 +215,16 @@ const AgendarCitaClient = () => {
       for (let m = 0; m < 60; m += 15) {
         const hStr = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
         const ocupado = bloquesOcupados.includes(hStr);
-
         let yaPaso = false;
         if (esHoy) {
-          if (h < horaActual) yaPaso = true;
-          if (h === horaActual && m <= minActual) yaPaso = true;
+          if (h < horaActual || (h === horaActual && m <= minActual))
+            yaPaso = true;
         }
-
         slots.push({ hora: hStr, disponible: !ocupado && !yaPaso });
       }
     }
     return slots;
   }, [fechaSel, bloquesOcupados]);
-
-  const manejarCerrarSesion = () => {
-    Alert.alert("Cerrar Sesión", "¿Deseas salir del sistema 333K?", [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Salir",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await signOut(auth);
-            router.replace("/login");
-          } catch (e) {
-            console.error(e);
-          }
-        },
-      },
-    ]);
-  };
 
   const enviarSolicitud = async () => {
     if (!estaListo) return;
@@ -265,12 +238,12 @@ const AgendarCitaClient = () => {
         duracion: servicioSel.duracion,
         fecha: fechaSel,
         hora: horaSel,
-        medico: "Dr. Chávez",
+        medico: servicioSel.medico, // Dinámico según el servicio
         estado: "pendiente",
         creadoEn: serverTimestamp(),
       });
 
-      const msg = `🦷 *Nueva Solicitud BBBK*\n\nServicio: ${servicioSel.nombre}\nFecha: ${fechaSel}\nHora: ${horaSel}`;
+      const msg = `🦷 *Nueva Solicitud Cita*\n\nServicio: ${servicioSel.nombre}\nMedico: ${servicioSel.medico}\nFecha: ${fechaSel}\nHora: ${horaSel}`;
       await Linking.openURL(
         `whatsapp://send?phone=593969743150&text=${encodeURIComponent(msg)}`,
       );
@@ -287,10 +260,8 @@ const AgendarCitaClient = () => {
         ref={scrollRef}
         contentContainerStyle={{ paddingBottom: 120 }}
       >
-        {/* HEADER MODIFICADO CON BOTÓN ATRÁS */}
         <View style={styles.header}>
           <View style={styles.headerTopRow}>
-            {/* NUEVO: Botón Atrás */}
             <TouchableOpacity
               onPress={() => router.back()}
               style={styles.iconBtn}
@@ -301,8 +272,8 @@ const AgendarCitaClient = () => {
                 color="#fff"
               />
             </TouchableOpacity>
-
             <Text style={styles.headerTitle}>Reserva tu Cita</Text>
+            <View style={{ width: 40 }} />
           </View>
 
           <View style={styles.stepIndicator}>
@@ -428,24 +399,25 @@ const AgendarCitaClient = () => {
 
 const styles = StyleSheet.create({
   header: {
-    padding: 40,
+    paddingTop: 50,
+    paddingHorizontal: 20,
+    paddingBottom: 30,
     backgroundColor: COLORS.darkGreen || "#1A3A34",
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
   },
-  headerTitle: { fontSize: 22, color: "#fff", fontWeight: "bold" },
   headerTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    width: "100%",
   },
-  logoutBtn: {
-    padding: 8,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderRadius: 10,
+  headerTitle: { fontSize: 20, color: "#fff", fontWeight: "bold" },
+  iconBtn: { padding: 5 },
+  stepIndicator: {
+    flexDirection: "row",
+    marginTop: 20,
+    justifyContent: "center",
   },
-  stepIndicator: { flexDirection: "row", marginTop: 15 },
   step: {
     width: 40,
     height: 4,
@@ -476,7 +448,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   activeOverlay: { backgroundColor: "rgba(140, 198, 63, 0.6)" },
-  serviceText: { color: "#fff", fontWeight: "bold", textAlign: "center" },
+  serviceText: {
+    color: "#fff",
+    fontWeight: "bold",
+    textAlign: "center",
+    padding: 5,
+  },
   calendar: { borderRadius: 15, elevation: 2, padding: 10 },
   timeGrid: {
     flexDirection: "row",
@@ -502,14 +479,18 @@ const styles = StyleSheet.create({
   fab: {
     position: "absolute",
     bottom: 30,
-    right: 20,
+    alignSelf: "center",
     paddingVertical: 15,
     paddingHorizontal: 25,
     borderRadius: 35,
     elevation: 10,
-    minWidth: 200,
+    minWidth: 250,
   },
-  fabContent: { flexDirection: "row", alignItems: "center" },
+  fabContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   fabText: { color: "#fff", fontWeight: "bold", marginLeft: 10 },
 });
 
