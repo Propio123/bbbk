@@ -6,21 +6,19 @@ import {
   doc,
   increment,
   onSnapshot,
-  query,
-  updateDoc,
-  where,
+  updateDoc
 } from "firebase/firestore";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   FlatList,
   Linking,
-  ScrollView,
+  Modal,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { auth, db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
@@ -29,216 +27,72 @@ export default function AdminMasterPanel() {
   const router = useRouter();
   const [vistaActual, setVistaActual] = useState("agenda");
   const [clientes, setClientes] = useState([]);
-  const [citas, setCitas] = useState([]);
-  const [medicoSel, setMedicoSel] = useState("");
-  const [listaMedicos, setListaMedicos] = useState([]);
   const [busqueda, setBusqueda] = useState("");
-  const [fechaSel] = useState(new Date().toISOString().split("T")[0]);
+  const [clienteEdicion, setClienteEdicion] = useState(null); // Para el modal de edición
 
-  // 1. CARGA DE DATOS
   useEffect(() => {
-    const unsubMedicos = onSnapshot(
-      collection(db, "especialidades"),
-      (snap) => {
-        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setListaMedicos(docs);
-        if (docs.length > 0 && !medicoSel) setMedicoSel(docs[0].medico);
-      },
-    );
-
     const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
       setClientes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
-
-    return () => {
-      unsubMedicos();
-      unsubUsers();
-    };
+    return () => unsubUsers();
   }, []);
 
-  useEffect(() => {
-    const q = query(collection(db, "citas"), where("fecha", "==", fechaSel));
-    return onSnapshot(q, (snap) => {
-      setCitas(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-  }, [fechaSel]);
-
-  // 2. FUNCIONES DE COMUNICACIÓN Y SESIÓN
-  const cerrarSesion = async () => {
-    Alert.alert("Salir", "¿Cerrar sesión administrativa?", [
-      { text: "No" },
-      {
-        text: "Sí",
-        onPress: () => signOut(auth).then(() => router.replace("/login")),
-      },
-    ]);
-  };
-
   const enviarWhatsApp = (telefono, mensaje) => {
-    if (!telefono)
-      return Alert.alert("Error", "El cliente no tiene teléfono registrado");
+    if (!telefono) return Alert.alert("Error", "Sin número registrado");
     let num = telefono.replace(/\D/g, "");
     if (num.startsWith("0")) num = "593" + num.substring(1);
-    const url = `whatsapp://send?phone=${num}&text=${encodeURIComponent(mensaje)}`;
-
-    Linking.openURL(url).catch(() => {
-      // Si falla el protocolo directo, usar web api
-      Linking.openURL(
-        `https://api.whatsapp.com/send?phone=${num}&text=${encodeURIComponent(mensaje)}`,
-      );
-    });
+    const url = `https://api.whatsapp.com/send?phone=${num}&text=${encodeURIComponent(mensaje)}`;
+    Linking.openURL(url);
   };
 
-  // 3. LÓGICA DE CUMPLEAÑOS
-  const esHoyCumple = (fechaNacimiento) => {
-    if (!fechaNacimiento) return false;
-    const hoy = new Date();
-    const cumple = new Date(fechaNacimiento);
-    return (
-      hoy.getDate() === cumple.getDate() && hoy.getMonth() === cumple.getMonth()
-    );
-  };
-
-  const procesarRegalo = async (cliente) => {
-    const mensaje = `¡Feliz Cumpleaños ${cliente.nombre}! 🎂 En 333K te regalamos 50 millas para tu próxima atención. ¡Disfrútalas!`;
-
-    Alert.alert(
-      "Regalo de Cumpleaños",
-      `¿Acreditar 50 millas a ${cliente.nombre}?`,
-      [
-        { text: "Cancelar" },
-        {
-          text: "¡Dar Regalo!",
-          onPress: async () => {
-            await updateDoc(doc(db, "users", cliente.id), {
-              puntosSalud: increment(50),
-              regaloEntregado: new Date().getFullYear(), // Evita doble regalo el mismo año
-            });
-            enviarWhatsApp(cliente.telefono, mensaje);
-          },
-        },
-      ],
-    );
-  };
-
-  // 4. GRID DE AGENDA
-  const agendaMap = useMemo(() => {
-    const map = {};
-    citas
-      .filter((c) => c.medico === medicoSel)
-      .forEach((cita) => {
-        const slots = Math.ceil((cita.duracion || 15) / 15);
-        let [h, m] = cita.hora.split(":").map(Number);
-        for (let i = 0; i < slots; i++) {
-          const key = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
-          if (!map[key]) map[key] = { ...cita, esInicio: i === 0 };
-          m += 15;
-          if (m >= 60) {
-            h++;
-            m = 0;
-          }
-        }
+  const guardarCambiosCliente = async () => {
+    if (!clienteEdicion) return;
+    try {
+      await updateDoc(doc(db, "users", clienteEdicion.id), {
+        nombre: clienteEdicion.nombre,
+        telefono: clienteEdicion.telefono,
+        fechaNacimiento: clienteEdicion.fechaNacimiento, // Formato YYYY-MM-DD
       });
-    return map;
-  }, [citas, medicoSel]);
+      setClienteEdicion(null);
+      Alert.alert("Éxito", "Datos actualizados");
+    } catch (e) {
+      Alert.alert("Error", "No se pudo actualizar");
+    }
+  };
 
-  const HORARIOS = [];
-  for (let h = 8; h < 18; h++) {
-    for (let m = 0; m < 60; m += 15)
-      HORARIOS.push(
-        `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`,
-      );
-  }
+  const esHoyCumple = (fecha) => {
+    if (!fecha) return false;
+    const hoy = new Date();
+    const d = hoy.getDate().toString().padStart(2, "0");
+    const m = (hoy.getMonth() + 1).toString().padStart(2, "0");
+    return fecha.endsWith(`${m}-${d}`); // Compara MM-DD
+  };
 
   return (
     <View style={styles.container}>
-      {/* HEADER CON BOTONES RECUPERADOS */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <TouchableOpacity onPress={cerrarSesion}>
+          <TouchableOpacity
+            onPress={() => signOut(auth).then(() => router.replace("/login"))}
+          >
             <MaterialCommunityIcons name="power" size={32} color="#FF5252" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>333K ADMIN</Text>
-          <View style={{ flexDirection: "row" }}>
-            <TouchableOpacity
-              onPress={() =>
-                enviarWhatsApp("0987654321", "Consulta administrativa 333K")
-              }
-              style={styles.iconBtn}
-            >
-              <MaterialCommunityIcons
-                name="whatsapp"
-                size={28}
-                color="#25D366"
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() =>
-                setVistaActual(vistaActual === "agenda" ? "clientes" : "agenda")
-              }
-              style={styles.iconBtn}
-            >
-              <MaterialCommunityIcons
-                name={
-                  vistaActual === "agenda" ? "account-heart" : "calendar-month"
-                }
-                size={28}
-                color="#fff"
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {vistaActual === "agenda" && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ marginTop: 15 }}
+          <Text style={styles.headerTitle}>333K GESTIÓN</Text>
+          <TouchableOpacity
+            onPress={() =>
+              setVistaActual(vistaActual === "agenda" ? "clientes" : "agenda")
+            }
           >
-            {listaMedicos.map((m) => (
-              <TouchableOpacity
-                key={m.id}
-                onPress={() => setMedicoSel(m.medico)}
-                style={[styles.tab, medicoSel === m.medico && styles.tabActive]}
-              >
-                <Text style={styles.tabText}>{m.medico}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
+            <MaterialCommunityIcons
+              name={vistaActual === "agenda" ? "account-edit" : "calendar"}
+              size={28}
+              color="#fff"
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* CONTENIDO */}
-      {vistaActual === "agenda" ? (
-        <ScrollView contentContainerStyle={styles.grid}>
-          {HORARIOS.map((h) => {
-            const info = agendaMap[h];
-            return (
-              <View
-                key={h}
-                style={[
-                  styles.slot,
-                  info?.estado === "aprobado" && styles.bgRojo,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.slotText,
-                    info && { color: "#000", fontWeight: "bold" },
-                  ]}
-                >
-                  {h}
-                </Text>
-                {info?.esInicio && (
-                  <Text style={styles.pacienteTag} numberOfLines={1}>
-                    {info.nombrePaciente}
-                  </Text>
-                )}
-              </View>
-            );
-          })}
-        </ScrollView>
-      ) : (
+      {vistaActual === "clientes" && (
         <View style={{ flex: 1, padding: 15 }}>
           <TextInput
             placeholder="Buscar paciente..."
@@ -247,70 +101,120 @@ export default function AdminMasterPanel() {
           />
           <FlatList
             data={clientes.filter((c) =>
-              (c.nombre || c.displayName || "")
-                .toLowerCase()
-                .includes(busqueda.toLowerCase()),
+              (c.nombre || "").toLowerCase().includes(busqueda.toLowerCase()),
             )}
             keyExtractor={(item) => item.id}
-            renderItem={({ item }) => {
-              const cumpleHoy = esHoyCumple(item.fechaNacimiento);
-              return (
-                <View style={styles.clienteCard}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: "bold" }}>
-                      {item.nombre || item.displayName}
-                    </Text>
-                    <Text style={{ fontSize: 10, color: "#999" }}>
-                      {item.telefono || "Sin número"}
-                    </Text>
-                  </View>
+            renderItem={({ item }) => (
+              <View style={styles.clienteCard}>
+                <TouchableOpacity
+                  style={{ flex: 1 }}
+                  onPress={() => setClienteEdicion(item)}
+                >
+                  <Text style={{ fontWeight: "bold" }}>
+                    {item.nombre || "Sin Nombre"}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      color: item.fechaNacimiento ? "#4CAF50" : "#FF9800",
+                    }}
+                  >
+                    {item.fechaNacimiento
+                      ? `Cumple: ${item.fechaNacimiento}`
+                      : "⚠️ Falta Fecha"}
+                  </Text>
+                </TouchableOpacity>
 
-                  <View style={styles.acciones}>
-                    {/* Icono de pastel que cambia de color si es el cumple */}
-                    <TouchableOpacity
-                      onPress={() => procesarRegalo(item)}
-                      style={styles.btnAccion}
-                    >
-                      <MaterialCommunityIcons
-                        name="cake-variant"
-                        size={24}
-                        color={cumpleHoy ? "#E91E63" : "#CCC"}
-                      />
-                    </TouchableOpacity>
-
-                    <TextInput
-                      style={styles.millasInput}
-                      keyboardType="numeric"
-                      defaultValue={String(item.puntosSalud || 0)}
-                      onEndEditing={(e) =>
-                        updateDoc(doc(db, "users", item.id), {
-                          puntosSalud: parseInt(e.nativeEvent.text) || 0,
-                        })
+                <View style={styles.acciones}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (!item.fechaNacimiento)
+                        return Alert.alert(
+                          "Aviso",
+                          "Edita al cliente para poner su fecha primero",
+                        );
+                      updateDoc(doc(db, "users", item.id), {
+                        puntosSalud: increment(50),
+                      });
+                      enviarWhatsApp(
+                        item.telefono,
+                        "¡Feliz Cumpleaños! Te regalamos 50 millas.",
+                      );
+                    }}
+                  >
+                    <MaterialCommunityIcons
+                      name="cake-variant"
+                      size={24}
+                      color={
+                        esHoyCumple(item.fechaNacimiento) ? "#E91E63" : "#EEE"
                       }
                     />
-
-                    <TouchableOpacity
-                      onPress={() =>
-                        enviarWhatsApp(
-                          item.telefono,
-                          "Hola, te escribimos de 333K...",
-                        )
-                      }
-                      style={styles.btnAccion}
-                    >
-                      <MaterialCommunityIcons
-                        name="whatsapp"
-                        size={24}
-                        color="#25D366"
-                      />
-                    </TouchableOpacity>
-                  </View>
+                  </TouchableOpacity>
+                  <TextInput
+                    style={styles.millasInput}
+                    keyboardType="numeric"
+                    defaultValue={String(item.puntosSalud || 0)}
+                    onEndEditing={(e) =>
+                      updateDoc(doc(db, "users", item.id), {
+                        puntosSalud: parseInt(e.nativeEvent.text) || 0,
+                      })
+                    }
+                  />
                 </View>
-              );
-            }}
+              </View>
+            )}
           />
         </View>
       )}
+
+      {/* MODAL EDITOR DE CLIENTE */}
+      <Modal visible={!!clienteEdicion} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Editar Datos de Cliente</Text>
+            <Text style={styles.label}>Nombre Completo:</Text>
+            <TextInput
+              style={styles.input}
+              value={clienteEdicion?.nombre}
+              onChangeText={(t) =>
+                setClienteEdicion({ ...clienteEdicion, nombre: t })
+              }
+            />
+            <Text style={styles.label}>Teléfono (con código):</Text>
+            <TextInput
+              style={styles.input}
+              value={clienteEdicion?.telefono}
+              placeholder="Ej: 593987654321"
+              onChangeText={(t) =>
+                setClienteEdicion({ ...clienteEdicion, telefono: t })
+              }
+            />
+            <Text style={styles.label}>Fecha Nacimiento (YYYY-MM-DD):</Text>
+            <TextInput
+              style={styles.input}
+              value={clienteEdicion?.fechaNacimiento}
+              placeholder="1990-05-24"
+              onChangeText={(t) =>
+                setClienteEdicion({ ...clienteEdicion, fechaNacimiento: t })
+              }
+            />
+            <TouchableOpacity
+              onPress={guardarCambiosCliente}
+              style={styles.btnGuardar}
+            >
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                GUARDAR CAMBIOS
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setClienteEdicion(null)}
+              style={{ marginTop: 15, alignItems: "center" }}
+            >
+              <Text style={{ color: "#999" }}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -330,36 +234,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerTitle: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-  iconBtn: { marginLeft: 15 },
-  tab: {
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    marginRight: 8,
-  },
-  tabActive: { backgroundColor: COLORS.primaryGreen },
-  tabText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
-  grid: {
-    padding: 10,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
-  slot: {
-    width: "23%",
-    height: 50,
-    backgroundColor: "#fff",
-    marginBottom: 8,
-    borderRadius: 10,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#EEE",
-  },
-  slotText: { fontSize: 10, color: "#CCC" },
-  pacienteTag: { fontSize: 7, fontWeight: "bold", color: "#333" },
-  bgRojo: { backgroundColor: "#FFEBEE", borderColor: "#FF5252" },
   searchBar: {
     backgroundColor: "#fff",
     padding: 12,
@@ -374,17 +248,42 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     flexDirection: "row",
     alignItems: "center",
-    elevation: 1,
   },
   acciones: { flexDirection: "row", alignItems: "center" },
-  btnAccion: { padding: 5, marginLeft: 5 },
   millasInput: {
     backgroundColor: "#F0F2F5",
     width: 45,
     textAlign: "center",
     borderRadius: 8,
     padding: 5,
+    marginLeft: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    padding: 20,
+  },
+  modalContent: { backgroundColor: "#fff", padding: 25, borderRadius: 30 },
+  modalTitle: {
     fontWeight: "bold",
-    fontSize: 12,
+    fontSize: 18,
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  label: { fontSize: 12, color: "#666", marginTop: 10 },
+  input: {
+    borderBottomWidth: 1,
+    borderColor: "#DDD",
+    paddingVertical: 5,
+    marginBottom: 10,
+    fontWeight: "bold",
+  },
+  btnGuardar: {
+    backgroundColor: COLORS.primaryGreen,
+    padding: 15,
+    borderRadius: 15,
+    marginTop: 20,
+    alignItems: "center",
   },
 });
