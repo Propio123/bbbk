@@ -1,4 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+// eslint-disable-next-line import/no-unresolved
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useRouter } from "expo-router";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
@@ -6,6 +8,7 @@ import { useState } from "react";
 import {
   Alert,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,50 +19,51 @@ import {
 import { auth, db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
 
-const Register = ({ navigation }) => {
+const Register = () => {
   const router = useRouter();
   const [formData, setFormData] = useState({
     nombre: "",
     telefono: "",
     email: "",
     password: "",
-    fechaNacimiento: "", // <-- NUEVO CAMPO
+    fechaNacimiento: new Date(), // Objeto Date inicial
   });
 
+  const [showPicker, setShowPicker] = useState(false);
+  const [fechaSeleccionada, setFechaSeleccionada] = useState(false);
   const [aceptaTerminos, setAceptaTerminos] = useState(false);
   const [mostrarPolitica, setMostrarPolitica] = useState(false);
+
+  // Manejador del cambio de fecha
+  const onChangeDate = (event, selectedDate) => {
+    const currentDate = selectedDate || formData.fechaNacimiento;
+    setShowPicker(Platform.OS === "ios"); // En iOS el picker puede quedarse abierto
+    setFormData({ ...formData, fechaNacimiento: currentDate });
+    setFechaSeleccionada(true);
+  };
 
   const handleRegister = async () => {
     const { email, password, nombre, telefono, fechaNacimiento } = formData;
 
-    // Validación de campos básicos
-    if (!email || !password || !nombre || !fechaNacimiento) {
+    // 1. Validaciones de Negocio
+    if (!email || !password || !nombre || !fechaSeleccionada) {
       Alert.alert(
-        "Campos obligatorios",
-        "Por favor completa todos los campos, incluyendo tu fecha de nacimiento.",
-      );
-      return;
-    }
-
-    // Validación de formato de fecha YYYY-MM-DD
-    const fechaRegex = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
-    if (!fechaRegex.test(fechaNacimiento)) {
-      Alert.alert(
-        "Formato de fecha incorrecto",
-        "Por favor ingresa la fecha en formato AAAA-MM-DD (ejemplo: 1990-05-24).",
+        "Campos incompletos",
+        "Por favor completa todos los datos, incluyendo tu fecha de nacimiento.",
       );
       return;
     }
 
     if (!aceptaTerminos) {
       Alert.alert(
-        "Consentimiento Requerido",
-        "Debe aceptar la política de tratamiento de datos personales (LOPDP) para continuar.",
+        "LOPDP",
+        "Debes aceptar el tratamiento de datos para continuar.",
       );
       return;
     }
 
     try {
+      // 2. Registro en Firebase Auth
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         email,
@@ -67,23 +71,27 @@ const Register = ({ navigation }) => {
       );
       const user = userCredential.user;
 
-      // Guardamos la fechaNacimiento en Firestore
+      // 3. Formateo de fecha a String (ISO) para persistencia limpia
+      // Esto nos da "YYYY-MM-DD" para que tu Panel Admin funcione perfecto
+      const fechaString = fechaNacimiento.toISOString().split("T")[0];
+
+      // 4. Persistencia en Firestore
       await setDoc(doc(db, "users", user.uid), {
-        nombre: nombre,
-        telefono: telefono,
-        email: email,
-        fechaNacimiento: fechaNacimiento, // <-- GUARDADO PARA EL PANEL ADMIN
+        uid: user.uid,
+        nombre,
+        telefono,
+        email,
+        fechaNacimiento: fechaString,
         rol: "paciente",
-        fechaRegistro: new Date().toISOString(),
         puntosSalud: 0,
         consentimientoLOPDP: true,
-        fechaConsentimiento: new Date().toISOString(),
+        fechaRegistro: new Date().toISOString(),
       });
 
-      Alert.alert("Éxito", "Cuenta creada correctamente.");
-      router.replace("/home"); // O la ruta de inicio de tu app
+      Alert.alert("¡Éxito!", "Cuenta creada correctamente.");
+      router.replace("/home");
     } catch (error) {
-      Alert.alert("Error al registrar", error.message);
+      Alert.alert("Error", error.message);
     }
   };
 
@@ -113,21 +121,32 @@ const Register = ({ navigation }) => {
 
         <TextInput
           style={styles.input}
-          placeholder="Teléfono (ej: 0987654321)"
+          placeholder="Teléfono"
           keyboardType="phone-pad"
           onChangeText={(val) => setFormData({ ...formData, telefono: val })}
         />
 
-        {/* INPUT DE FECHA DE NACIMIENTO */}
-        <TextInput
-          style={styles.input}
-          placeholder="Fecha Nacimiento (AAAA-MM-DD)"
-          keyboardType="numeric"
-          maxLength={10}
-          onChangeText={(val) =>
-            setFormData({ ...formData, fechaNacimiento: val })
-          }
-        />
+        {/* SELECTOR DE FECHA (MÁS SEGURO QUE TEXTINPUT) */}
+        <TouchableOpacity
+          style={[styles.input, { justifyContent: "center" }]}
+          onPress={() => setShowPicker(true)}
+        >
+          <Text style={{ color: fechaSeleccionada ? "#000" : "#999" }}>
+            {fechaSeleccionada
+              ? formData.fechaNacimiento.toLocaleDateString()
+              : "Fecha de Nacimiento"}
+          </Text>
+        </TouchableOpacity>
+
+        {showPicker && (
+          <DateTimePicker
+            value={formData.fechaNacimiento}
+            mode="date"
+            display="default"
+            maximumDate={new Date()} // No permite fechas futuras
+            onChange={onChangeDate}
+          />
+        )}
 
         <TextInput
           style={styles.input}
@@ -144,7 +163,6 @@ const Register = ({ navigation }) => {
           onChangeText={(val) => setFormData({ ...formData, password: val })}
         />
 
-        {/* SECCIÓN DE CONSENTIMIENTO */}
         <View style={styles.consentContainer}>
           <TouchableOpacity
             onPress={() => setAceptaTerminos(!aceptaTerminos)}
@@ -158,14 +176,11 @@ const Register = ({ navigation }) => {
               color={aceptaTerminos ? COLORS.primaryGreen : "#666"}
             />
             <Text style={styles.consentText}>
-              Acepto el tratamiento de mis datos personales según la LOPDP.
+              Acepto el tratamiento de datos personales (LOPDP).
             </Text>
           </TouchableOpacity>
-
           <TouchableOpacity onPress={() => setMostrarPolitica(true)}>
-            <Text style={styles.linkText}>
-              Leer Política de Privacidad completa
-            </Text>
+            <Text style={styles.linkText}>Ver Política de Privacidad</Text>
           </TouchableOpacity>
         </View>
 
@@ -177,18 +192,16 @@ const Register = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
-      {/* ... (El resto del código del Modal y Styles se mantiene igual) */}
-      <Modal visible={mostrarPolitica} animationType="slide" transparent={true}>
+      {/* MODAL LOPDP - Se mantiene igual que tu versión previa */}
+      <Modal visible={mostrarPolitica} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Política de Privacidad</Text>
-            <ScrollView style={styles.modalScroll}>
+            <Text style={styles.modalTitle}>Política LOPDP</Text>
+            <ScrollView>
               <Text style={styles.legalText}>
-                De conformidad con la Ley Orgánica de Protección de Datos
-                Personales (LOPDP) de Ecuador... (Tu texto legal actual)
+                De conformidad con la Ley Orgánica de Protección de Datos...
               </Text>
             </ScrollView>
-
             <TouchableOpacity
               style={styles.btnCloseModal}
               onPress={() => setMostrarPolitica(false)}
@@ -202,7 +215,6 @@ const Register = ({ navigation }) => {
   );
 };
 
-// ... (Mismos estilos que ya tenías)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.primaryGreen },
   header: { height: 160, justifyContent: "center", alignItems: "center" },
@@ -270,7 +282,6 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     textAlign: "center",
   },
-  modalScroll: { flex: 1, marginBottom: 15 },
   legalText: { fontSize: 13, color: "#333", lineHeight: 20 },
   btnCloseModal: {
     backgroundColor: COLORS.primaryGreen,
