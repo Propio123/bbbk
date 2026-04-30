@@ -2,7 +2,9 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { signOut } from "firebase/auth";
 import {
+  addDoc,
   collection,
+  deleteDoc,
   doc,
   getDocs,
   increment,
@@ -36,6 +38,7 @@ export default function AdminMasterPanel() {
   // --- ESTADOS MÉDICOS ---
   const [listaMedicos, setListaMedicos] = useState([]);
   const [medicoSel, setMedicoSel] = useState("");
+  const [nuevoDoctor, setNuevoDoctor] = useState({ nombre: "", medico: "" });
 
   // --- ESTADOS AGENDA Y EDICIÓN ---
   const [fechaSel, setFechaSel] = useState(
@@ -76,11 +79,26 @@ export default function AdminMasterPanel() {
     });
   }, [fechaSel, vistaActual]);
 
-  // 2. WhatsApp Masivo
+  // 2. Funciones de Control (Cerrar Sesión y WhatsApp)
+  const ejecutarCerrarSesion = async () => {
+    Alert.alert("Cerrar Sesión", "¿Desea salir del panel de administración?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Salir",
+        style: "destructive",
+        onPress: async () => {
+          await signOut(auth);
+          router.replace("/login");
+        },
+      },
+    ]);
+  };
+
   const prepararWA = async () => {
     const manana = new Date();
     manana.setDate(manana.getDate() + 1);
     const fechaM = manana.toISOString().split("T")[0];
+
     setLoading(true);
     try {
       const q = query(
@@ -94,64 +112,45 @@ export default function AdminMasterPanel() {
         ...d.data(),
         seleccionado: true,
       }));
-      setCitasManana(data);
-      if (data.length === 0) Alert.alert("Aviso", "No hay citas para mañana.");
-      else setModalWA(true);
+
+      if (data.length === 0) {
+        Alert.alert("Aviso", "No hay citas programadas para mañana.");
+      } else {
+        setCitasManana(data);
+        setModalWA(true);
+      }
     } catch (e) {
-      Alert.alert("Error", "Error al consultar citas.");
+      Alert.alert("Error", "No se pudieron cargar las citas de mañana.");
     } finally {
       setLoading(false);
     }
   };
 
-  const enviarMasivo = async () => {
+  const enviarMensajesWA = async () => {
     const seleccionados = citasManana.filter((c) => c.seleccionado);
     for (const c of seleccionados) {
       let tel = (c.telefonoPaciente || "").replace(/\D/g, "");
       if (tel.startsWith("0")) tel = "593" + tel.substring(1);
-      const msg = `Hola ${c.nombrePaciente}, confirmamos su cita de ${c.especialidad || "Odontología"} para mañana a las ${c.hora}. ¿Nos confirma su asistencia?`;
-      await Linking.openURL(
-        `https://api.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent(msg)}`,
-      );
-      await new Promise((r) => setTimeout(r, 1000));
+      const msg = `Hola ${c.nombrePaciente}, le saludamos de 333K. Confirmamos su cita de ${c.especialidad} para mañana a las ${c.hora}. ¿Nos confirma su asistencia?`;
+      const url = `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`;
+      await Linking.openURL(url);
     }
     setModalWA(false);
   };
 
-  // 3. Lógica de Edición y Cierre
-  const cerrarSesion = () => {
-    Alert.alert("Cerrar Sesión", "¿Está seguro?", [
-      { text: "No" },
-      {
-        text: "Sí",
-        onPress: () => signOut(auth).then(() => router.replace("/login")),
-      },
-    ]);
+  // 3. Gestión de Médicos Avanzada
+  const agregarMedico = async () => {
+    if (!nuevoDoctor.nombre || !nuevoDoctor.medico)
+      return Alert.alert("Error", "Complete ambos campos");
+    await addDoc(collection(db, "especialidades"), nuevoDoctor);
+    setNuevoDoctor({ nombre: "", medico: "" });
   };
 
-  const guardarCambioMedico = async () => {
-    if (!nuevoMedicoParaCita || nuevoMedicoParaCita === citaEnEdicion.medico) {
-      setCitaEnEdicion(null);
-      return;
-    }
-    const ocupado = citas.find(
-      (c) =>
-        c.medico === nuevoMedicoParaCita &&
-        c.hora === citaEnEdicion.hora &&
-        c.estado !== "finalizado",
-    );
-    if (ocupado)
-      return Alert.alert(
-        "Error",
-        `El Dr. ${nuevoMedicoParaCita} ya está ocupado a las ${citaEnEdicion.hora}`,
-      );
-
-    setLoading(true);
-    await updateDoc(doc(db, "citas", citaEnEdicion.id), {
-      medico: nuevoMedicoParaCita,
-    });
-    setCitaEnEdicion(null);
-    setLoading(false);
+  const eliminarMedico = (id) => {
+    Alert.alert("Eliminar", "¿Borrar este profesional?", [
+      { text: "No" },
+      { text: "Sí", onPress: () => deleteDoc(doc(db, "especialidades", id)) },
+    ]);
   };
 
   // 4. Mapeo de Grid
@@ -185,17 +184,21 @@ export default function AdminMasterPanel() {
 
   return (
     <View style={styles.container}>
+      {/* HEADER CORREGIDO */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <TouchableOpacity onPress={cerrarSesion}>
-            <MaterialCommunityIcons name="logout" size={24} color="#fff" />
+          <TouchableOpacity
+            onPress={ejecutarCerrarSesion}
+            style={styles.logoutBtn}
+          >
+            <MaterialCommunityIcons name="power" size={28} color="#FF5252" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>333K Master Panel</Text>
+          <Text style={styles.headerTitle}>333K MASTER</Text>
           <View style={{ flexDirection: "row" }}>
             <TouchableOpacity onPress={prepararWA} style={styles.iconBtn}>
               <MaterialCommunityIcons
                 name="whatsapp"
-                size={26}
+                size={28}
                 color="#25D366"
               />
             </TouchableOpacity>
@@ -203,7 +206,11 @@ export default function AdminMasterPanel() {
               onPress={() => setModalMedicos(true)}
               style={styles.iconBtn}
             >
-              <MaterialCommunityIcons name="doctor" size={26} color="#fff" />
+              <MaterialCommunityIcons
+                name="account-plus"
+                size={28}
+                color="#fff"
+              />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() =>
@@ -215,7 +222,7 @@ export default function AdminMasterPanel() {
                 name={
                   vistaActual === "agenda" ? "account-group" : "calendar-month"
                 }
-                size={26}
+                size={28}
                 color="#fff"
               />
             </TouchableOpacity>
@@ -234,13 +241,14 @@ export default function AdminMasterPanel() {
                 onPress={() => setMedicoSel(m.medico)}
                 style={[styles.tab, medicoSel === m.medico && styles.tabActive]}
               >
-                <Text style={styles.tabText}>{m.nombre}</Text>
+                <Text style={styles.tabText}>{m.medico}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
         )}
       </View>
 
+      {/* CONTENIDO PRINCIPAL */}
       {vistaActual === "agenda" ? (
         <ScrollView contentContainerStyle={styles.grid}>
           {HORARIOS.map((h) => {
@@ -266,7 +274,9 @@ export default function AdminMasterPanel() {
                   {h}
                 </Text>
                 {info?.esInicio && (
-                  <Text style={styles.pacienteTag}>{info.nombrePaciente}</Text>
+                  <Text style={styles.pacienteTag} numberOfLines={1}>
+                    {info.nombrePaciente}
+                  </Text>
                 )}
               </TouchableOpacity>
             );
@@ -275,7 +285,7 @@ export default function AdminMasterPanel() {
       ) : (
         <View style={{ flex: 1, padding: 15 }}>
           <TextInput
-            placeholder="Buscar cliente..."
+            placeholder="Buscar paciente por nombre..."
             style={styles.searchBar}
             onChangeText={setBusqueda}
           />
@@ -288,13 +298,15 @@ export default function AdminMasterPanel() {
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <View style={styles.clienteCard}>
-                <Text style={{ fontWeight: "bold", flex: 1 }}>
-                  {item.nombre || item.displayName || "Paciente"}
-                </Text>
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Text style={{ fontSize: 10, color: "#666", marginRight: 5 }}>
-                    Millas:
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: "bold" }}>
+                    {item.nombre || item.displayName || "Paciente"}
                   </Text>
+                  <Text style={{ fontSize: 10, color: "#999" }}>
+                    {item.email}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <TextInput
                     style={styles.millasInput}
                     keyboardType="numeric"
@@ -322,15 +334,13 @@ export default function AdminMasterPanel() {
         </View>
       )}
 
-      {/* PANEL EDICIÓN DE CITA (Grid) */}
+      {/* PANEL EDICIÓN DE CITA */}
       {citaEnEdicion && (
         <View style={styles.editPanel}>
           <Text style={styles.editPanelTitle}>
-            Paciente: {citaEnEdicion.nombrePaciente}
+            Editar: {citaEnEdicion.nombrePaciente}
           </Text>
-          <Text style={styles.label}>
-            Reasignar médico para las {citaEnEdicion.hora}:
-          </Text>
+          <Text style={styles.label}>Cambiar a otro médico disponible:</Text>
           <ScrollView horizontal style={{ marginBottom: 15 }}>
             {listaMedicos.map((m) => (
               <TouchableOpacity
@@ -347,14 +357,30 @@ export default function AdminMasterPanel() {
           </ScrollView>
           <View style={{ flexDirection: "row" }}>
             <TouchableOpacity
-              onPress={guardarCambioMedico}
+              onPress={async () => {
+                const ocupado = citas.find(
+                  (c) =>
+                    c.medico === nuevoMedicoParaCita &&
+                    c.hora === citaEnEdicion.hora &&
+                    c.estado !== "finalizado",
+                );
+                if (ocupado)
+                  return Alert.alert(
+                    "Error",
+                    "Este médico ya tiene cita a esa hora",
+                  );
+                await updateDoc(doc(db, "citas", citaEnEdicion.id), {
+                  medico: nuevoMedicoParaCita,
+                });
+                setCitaEnEdicion(null);
+              }}
               style={styles.btnSave}
             >
-              <Text style={{ color: "#fff", fontWeight: "bold" }}>GUARDAR</Text>
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>CAMBIAR</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => {
-                updateDoc(doc(db, "citas", citaEnEdicion.id), {
+              onPress={async () => {
+                await updateDoc(doc(db, "citas", citaEnEdicion.id), {
                   estado: "finalizado",
                 });
                 setCitaEnEdicion(null);
@@ -375,11 +401,86 @@ export default function AdminMasterPanel() {
         </View>
       )}
 
-      {/* MODAL WHATSAPP */}
-      <Modal visible={modalWA} transparent animationType="slide">
+      {/* MODAL GESTIÓN TOTAL DE MÉDICOS */}
+      <Modal visible={modalMedicos} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Citas para Mañana</Text>
+            <Text style={styles.modalTitle}>Gestión de Profesionales</Text>
+
+            {/* Formulario Nuevo Médico */}
+            <View style={styles.formMedico}>
+              <TextInput
+                placeholder="Especialidad (ej: Cirugía)"
+                style={styles.inputNew}
+                value={nuevoDoctor.nombre}
+                onChangeText={(t) =>
+                  setNuevoDoctor({ ...nuevoDoctor, nombre: t })
+                }
+              />
+              <TextInput
+                placeholder="Nombre (ej: Dr. Perez)"
+                style={styles.inputNew}
+                value={nuevoDoctor.medico}
+                onChangeText={(t) =>
+                  setNuevoDoctor({ ...nuevoDoctor, medico: t })
+                }
+              />
+              <TouchableOpacity onPress={agregarMedico} style={styles.btnAdd}>
+                <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                  AÑADIR PROFESIONAL
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={listaMedicos}
+              renderItem={({ item }) => (
+                <View style={styles.medicoRow}>
+                  <View style={{ flex: 1 }}>
+                    <TextInput
+                      style={{ fontWeight: "bold" }}
+                      defaultValue={item.nombre}
+                      onEndEditing={(e) =>
+                        updateDoc(doc(db, "especialidades", item.id), {
+                          nombre: e.nativeEvent.text,
+                        })
+                      }
+                    />
+                    <TextInput
+                      style={{ color: COLORS.primaryGreen }}
+                      defaultValue={item.medico}
+                      onEndEditing={(e) =>
+                        updateDoc(doc(db, "especialidades", item.id), {
+                          medico: e.nativeEvent.text,
+                        })
+                      }
+                    />
+                  </View>
+                  <TouchableOpacity onPress={() => eliminarMedico(item.id)}>
+                    <MaterialCommunityIcons
+                      name="delete"
+                      size={24}
+                      color="#FF5252"
+                    />
+                  </TouchableOpacity>
+                </View>
+              )}
+            />
+            <TouchableOpacity
+              onPress={() => setModalMedicos(false)}
+              style={styles.btnClose}
+            >
+              <Text style={{ color: "#fff" }}>Terminar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL WHATSAPP */}
+      <Modal visible={modalWA} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Confirmación Mañana</Text>
             <FlatList
               data={citasManana}
               renderItem={({ item }) => (
@@ -410,53 +511,19 @@ export default function AdminMasterPanel() {
                 </TouchableOpacity>
               )}
             />
-            <TouchableOpacity onPress={enviarMasivo} style={styles.btnPrimario}>
+            <TouchableOpacity
+              onPress={enviarMensajesWA}
+              style={styles.btnPrimario}
+            >
               <Text style={{ color: "#fff", fontWeight: "bold" }}>
-                ENVIAR WHATSAPP
+                ABRIR WHATSAPP
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setModalWA(false)}
               style={styles.btnSecundario}
             >
-              <Text>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* MODAL MÉDICOS EDITABLES */}
-      <Modal visible={modalMedicos} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Especialidades y Doctores</Text>
-            {listaMedicos.map((m) => (
-              <View key={m.id} style={{ marginBottom: 10 }}>
-                <Text
-                  style={{
-                    fontSize: 11,
-                    color: COLORS.primaryGreen,
-                    fontWeight: "bold",
-                  }}
-                >
-                  {m.nombre}
-                </Text>
-                <TextInput
-                  style={styles.inputEdit}
-                  defaultValue={m.medico}
-                  onEndEditing={(e) =>
-                    updateDoc(doc(db, "especialidades", m.id), {
-                      medico: e.nativeEvent.text,
-                    })
-                  }
-                />
-              </View>
-            ))}
-            <TouchableOpacity
-              onPress={() => setModalMedicos(false)}
-              style={styles.btnClose}
-            >
-              <Text style={{ color: "#fff" }}>Cerrar</Text>
+              <Text>Cerrar</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -487,12 +554,18 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  headerTitle: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-  iconBtn: { marginLeft: 15 },
+  headerTitle: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "bold",
+    letterSpacing: 1,
+  },
+  logoutBtn: { padding: 5 },
+  iconBtn: { marginLeft: 12 },
   tab: {
     paddingVertical: 8,
     paddingHorizontal: 15,
-    borderRadius: 15,
+    borderRadius: 12,
     backgroundColor: "rgba(255,255,255,0.1)",
     marginRight: 8,
   },
@@ -503,7 +576,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    paddingBottom: 120,
+    paddingBottom: 150,
   },
   slot: {
     width: "23%",
@@ -520,38 +593,41 @@ const styles = StyleSheet.create({
   pacienteTag: {
     fontSize: 7,
     fontWeight: "bold",
-    textAlign: "center",
     color: "#333",
+    marginTop: 2,
+    paddingHorizontal: 2,
   },
-  bgRojo: { backgroundColor: "#FF5252" },
+  bgRojo: { backgroundColor: "#FFCDD2", borderColor: "#FF5252" },
   searchBar: {
     backgroundColor: "#fff",
-    padding: 10,
-    borderRadius: 10,
+    padding: 12,
+    borderRadius: 15,
     marginBottom: 15,
+    elevation: 2,
   },
   clienteCard: {
     backgroundColor: "#fff",
-    padding: 12,
+    padding: 15,
     borderRadius: 15,
     marginBottom: 8,
     flexDirection: "row",
     alignItems: "center",
+    elevation: 1,
   },
   millasInput: {
     backgroundColor: "#F0F0F0",
-    width: 55,
+    width: 60,
     textAlign: "center",
-    borderRadius: 8,
-    padding: 5,
+    borderRadius: 10,
+    padding: 8,
     fontWeight: "bold",
     color: COLORS.darkGreen,
   },
   btnSmall: {
     backgroundColor: COLORS.primaryGreen,
-    padding: 6,
-    borderRadius: 8,
-    marginLeft: 5,
+    padding: 10,
+    borderRadius: 10,
+    marginLeft: 8,
   },
   btnText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
   editPanel: {
@@ -560,11 +636,43 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: "#fff",
-    padding: 20,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    elevation: 20,
+    padding: 25,
+    borderTopLeftRadius: 35,
+    borderTopRightRadius: 35,
+    elevation: 25,
   },
+  editPanelTitle: {
+    fontWeight: "bold",
+    fontSize: 18,
+    marginBottom: 15,
+    color: COLORS.darkGreen,
+  },
+  formMedico: {
+    backgroundColor: "#F9F9F9",
+    padding: 15,
+    borderRadius: 15,
+    marginBottom: 20,
+  },
+  inputNew: {
+    borderBottomWidth: 1,
+    borderColor: "#DDD",
+    marginBottom: 10,
+    padding: 5,
+  },
+  btnAdd: {
+    backgroundColor: COLORS.darkGreen,
+    padding: 12,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  medicoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: "#EEE",
+  },
+  // eslint-disable-next-line no-dupe-keys
   editPanelTitle: { fontWeight: "bold", fontSize: 15, marginBottom: 10 },
   miniTab: {
     padding: 10,
@@ -574,55 +682,65 @@ const styles = StyleSheet.create({
   },
   btnSave: {
     backgroundColor: COLORS.primaryGreen,
-    padding: 12,
-    borderRadius: 12,
+    padding: 15,
+    borderRadius: 15,
     flex: 1,
     marginRight: 5,
     alignItems: "center",
   },
   btnDone: {
     backgroundColor: "#2196F3",
-    padding: 12,
-    borderRadius: 12,
+    padding: 15,
+    borderRadius: 15,
     flex: 1,
     marginRight: 5,
     alignItems: "center",
   },
   btnCancel: {
     backgroundColor: "#F0F0F0",
-    padding: 12,
-    borderRadius: 12,
+    padding: 15,
+    borderRadius: 15,
     alignItems: "center",
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "center",
     padding: 20,
   },
-  modalContent: { backgroundColor: "#fff", padding: 20, borderRadius: 25 },
-  modalTitle: { fontWeight: "bold", textAlign: "center", marginBottom: 15 },
+  modalContent: {
+    backgroundColor: "#fff",
+    padding: 25,
+    borderRadius: 30,
+    maxHeight: "85%",
+  },
+  modalTitle: {
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 20,
+    fontSize: 18,
+  },
   waItem: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
+    padding: 15,
     borderBottomWidth: 1,
     borderColor: "#EEE",
   },
   btnPrimario: {
     backgroundColor: "#25D366",
-    padding: 15,
-    borderRadius: 15,
+    padding: 18,
+    borderRadius: 18,
     alignItems: "center",
     marginTop: 15,
   },
-  btnSecundario: { padding: 10, alignItems: "center" },
+  btnSecundario: { padding: 15, alignItems: "center" },
   inputEdit: { borderBottomWidth: 1, borderColor: "#DDD", paddingVertical: 5 },
   btnClose: {
     backgroundColor: COLORS.darkGreen,
-    padding: 12,
-    borderRadius: 15,
-    marginTop: 10,
+    padding: 15,
+    borderRadius: 18,
+    marginTop: 15,
     alignItems: "center",
   },
   loader: { position: "absolute", top: "50%", alignSelf: "center" },
