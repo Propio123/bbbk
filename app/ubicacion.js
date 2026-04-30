@@ -15,15 +15,19 @@ import { COLORS } from "../src/constants/theme";
 const Ubicacion = () => {
   const router = useRouter();
 
-  // Coordenadas aproximadas de la zona céntrica de Ibarra para el botón
+  // Datos extraídos del enlace de Google Maps proporcionado
+  const LAT = "0.3489278";
+  const LNG = "-78.1214684";
+  const PLACE_ID = "ChIJm6Sa5bc8KiQRmwEZV6xXRCY"; // ID de BBBK Odontología
+
   const abrirMapa = () => {
-    const url =
-      "https://www.google.com/maps/search/?api=1&query=Clinica+Dental+Ibarra";
+    // URL optimizada para abrir directamente en la app de Google Maps o Apple Maps
+    const url = `https://www.google.com/maps/search/?api=1&query=${LAT},${LNG}&query_place_id=${PLACE_ID}`;
     Linking.openURL(url);
   };
 
   const llamarClinica = () => {
-    Linking.openURL("tel:+59362610657");
+    Linking.openURL("tel:+593969743150"); // Número configurado previamente
   };
 
   return (
@@ -32,15 +36,18 @@ const Ubicacion = () => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.container}
       >
-        {/* Card de Mapa/Ubicación */}
+        {/* Card de Mapa con la ubicación real de BBBK */}
         <View style={styles.card}>
           <View style={styles.imageContainer}>
             <Image
               source={{
-                uri: "https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?w=800",
+                uri: "https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=800",
               }}
               style={styles.mapPlaceholder}
             />
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>BBBK Odontología</Text>
+            </View>
             <TouchableOpacity style={styles.fabMap} onPress={abrirMapa}>
               <MaterialCommunityIcons
                 name="google-maps"
@@ -51,10 +58,11 @@ const Ubicacion = () => {
           </View>
 
           <View style={styles.infoSection}>
-            <Text style={styles.addressTitle}>Nuestra Sede Ibarra</Text>
+            <Text style={styles.addressTitle}>Nuestra Ubicación</Text>
             <Text style={styles.addressText}>
-              Calle Principal y Av. Mariano Acosta{"\n"}
-              Ibarra, Imbabura - Ecuador
+              Juan de Velasco 7-39 y Olmedo{"\n"}
+              Ibarra 100105, Imbabura{"\n"}
+              Ecuador
             </Text>
 
             <View style={styles.ratingRow}>
@@ -68,12 +76,14 @@ const Ubicacion = () => {
                   />
                 ))}
               </View>
-              <Text style={styles.ratingText}>(5.0) Google Business</Text>
+              <Text style={styles.ratingText}>
+                Excelente reputación en Ibarra
+              </Text>
             </View>
           </View>
         </View>
 
-        {/* Botones de Acción Rápida */}
+        {/* Botones de Acción */}
         <View style={styles.actionGrid}>
           <TouchableOpacity style={styles.actionBtn} onPress={llamarClinica}>
             <MaterialCommunityIcons
@@ -95,33 +105,30 @@ const Ubicacion = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Horarios de Atención */}
+        {/* Horarios actualizados */}
         <View style={styles.hoursCard}>
           <Text style={styles.sectionTitle}>Horarios de Atención</Text>
           <View style={styles.hourRow}>
             <Text style={styles.dayText}>Lunes a Viernes</Text>
-            <Text style={styles.timeText}>08:00 - 18:00</Text>
+            <Text style={styles.timeText}>08:30 - 18:30</Text>
           </View>
           <View style={styles.hourRow}>
-            <Text style={styles.dayText}>Sábados</Text>
+            <Text style={styles.dayText}>Sábado</Text>
             <Text style={styles.timeText}>09:00 - 13:00</Text>
           </View>
           <View style={styles.hourRow}>
-            <Text style={[styles.dayText, { color: "#e74c3c" }]}>Domingos</Text>
+            <Text style={[styles.dayText, { color: "#e74c3c" }]}>Domingo</Text>
             <Text style={styles.timeText}>Cerrado</Text>
           </View>
         </View>
 
-        {/* Footer Informativo */}
         <View style={styles.footer}>
           <MaterialCommunityIcons
-            name="shield-check"
+            name="check-decagram"
             size={24}
             color={COLORS.primaryGreen}
           />
-          <Text style={styles.footerText}>
-            Atención Profesional Garantizada
-          </Text>
+          <Text style={styles.footerText}>Cuidado dental de alta calidad</Text>
         </View>
       </ScrollView>
     </ScreenWrapper>
@@ -129,9 +136,7 @@ const Ubicacion = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 20,
-  },
+  container: { padding: 20 },
   card: {
     backgroundColor: "#fff",
     borderRadius: 20,
@@ -142,15 +147,18 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     marginBottom: 20,
   },
-  imageContainer: {
-    height: 180,
-    position: "relative",
+  imageContainer: { height: 180, position: "relative" },
+  mapPlaceholder: { width: "100%", height: "100%", backgroundColor: "#eee" },
+  badge: {
+    position: "absolute",
+    top: 15,
+    left: 15,
+    backgroundColor: "rgba(26, 58, 52, 0.85)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
-  mapPlaceholder: {
-    width: "100%",
-    height: "100%",
-    backgroundColor: "#eee",
-  },
+  badgeText: { color: "#fff", fontSize: 12, fontWeight: "bold" },
   fabMap: {
     position: "absolute",
     bottom: 15,
@@ -160,20 +168,14 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     elevation: 5,
   },
-  infoSection: {
-    padding: 20,
-  },
+  infoSection: { padding: 20 },
   addressTitle: {
     fontSize: 20,
     fontWeight: "bold",
     color: "#333",
     marginBottom: 5,
   },
-  addressText: {
-    fontSize: 15,
-    color: "#666",
-    lineHeight: 22,
-  },
+  addressText: { fontSize: 15, color: "#666", lineHeight: 22 },
   ratingRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -182,15 +184,8 @@ const styles = StyleSheet.create({
     borderTopColor: "#f0f0f0",
     paddingTop: 15,
   },
-  stars: {
-    flexDirection: "row",
-    marginRight: 10,
-  },
-  ratingText: {
-    fontSize: 13,
-    color: "#888",
-    fontWeight: "600",
-  },
+  stars: { flexDirection: "row", marginRight: 10 },
+  ratingText: { fontSize: 13, color: "#888", fontWeight: "600" },
   actionGrid: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -232,24 +227,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 10,
   },
-  dayText: {
-    fontSize: 15,
-    color: "#555",
-  },
-  timeText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#333",
-  },
-  footer: {
-    alignItems: "center",
-    paddingBottom: 20,
-  },
-  footerText: {
-    marginTop: 5,
-    color: "#888",
-    fontSize: 14,
-  },
+  dayText: { fontSize: 15, color: "#555" },
+  timeText: { fontSize: 15, fontWeight: "600", color: "#333" },
+  footer: { alignItems: "center", paddingBottom: 20 },
+  footerText: { marginTop: 5, color: "#888", fontSize: 14 },
 });
 
 export default Ubicacion;
