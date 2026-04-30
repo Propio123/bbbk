@@ -3,30 +3,30 @@ import { useRouter } from "expo-router";
 import {
   collection,
   doc,
+  getDocs,
   increment,
   onSnapshot,
   query,
-  updateDoc, // Importante para creación masiva
-  where,
-  writeBatch
+  updateDoc,
+  where
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Linking,
   Modal,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
 
-// Datos exactos que solicitaste
 const DATA_ESPECIALIDADES = [
   { id: "gen", nombre: "General", medico: "Dra. Doménica Palma", duracion: 30 },
   {
@@ -72,78 +72,104 @@ export default function AdminMasterPanel() {
   const [listaMedicos, setListaMedicos] = useState([]);
   const [medicoSel, setMedicoSel] = useState("");
 
-  // --- OTROS ESTADOS (Agenda, Clientes, Modales) ---
+  // --- ESTADOS AGENDA ---
   const [fechaSel, setFechaSel] = useState(
     new Date().toISOString().split("T")[0],
   );
   const [citas, setCitas] = useState([]);
+
+  // --- ESTADOS CLIENTES ---
   const [clientes, setClientes] = useState([]);
   const [busqueda, setBusqueda] = useState("");
-  const [puntosEdit, setPuntosEdit] = useState({});
+  const [puntosManuales, setPuntosManuales] = useState({}); // Para el input digitalizable
+
+  // --- MODALES ---
   const [modalMedicos, setModalMedicos] = useState(false);
+  const [modalWA, setModalWA] = useState(false);
+  const [citasManana, setCitasManana] = useState([]);
 
-  // 1. FUNCIÓN TEMPORAL: Crear especialidades en Firestore
-  const ejecutarInicializacion = async () => {
-    setLoading(true);
-    const batch = writeBatch(db);
-
-    DATA_ESPECIALIDADES.forEach((esp) => {
-      const docRef = doc(db, "especialidades", esp.id);
-      batch.set(docRef, esp);
+  // 1. Inicialización y Escuchas
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "especialidades"), (snap) => {
+      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setListaMedicos(docs);
+      if (docs.length > 0 && !medicoSel) setMedicoSel(docs[0].medico);
     });
+    return () => unsub();
+  }, []);
 
+  useEffect(() => {
+    if (vistaActual === "agenda" && medicoSel) {
+      const q = query(
+        collection(db, "citas"),
+        where("fecha", "==", fechaSel),
+        where("medico", "==", medicoSel),
+      );
+      return onSnapshot(q, (snap) =>
+        setCitas(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      );
+    }
+    if (vistaActual === "clientes") {
+      return onSnapshot(collection(db, "users"), (snap) =>
+        setClientes(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      );
+    }
+  }, [fechaSel, medicoSel, vistaActual]);
+
+  // 2. Lógica de WhatsApp Masivo
+  const prepararWA = async () => {
+    const manana = new Date();
+    manana.setDate(manana.getDate() + 1);
+    const fechaM = manana.toISOString().split("T")[0];
+    setLoading(true);
     try {
-      await batch.commit();
-      Alert.alert(
-        "Éxito",
-        "Especialidades creadas correctamente en Firestore.",
+      const q = query(
+        collection(db, "citas"),
+        where("fecha", "==", fechaM),
+        where("estado", "==", "aprobado"),
       );
+      const snap = await getDocs(q);
+      const data = snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+        seleccionado: true,
+      }));
+      setCitasManana(data);
+      if (data.length === 0)
+        Alert.alert("Aviso", "No hay citas aprobadas para mañana.");
+      else setModalWA(true);
     } catch (e) {
-      Alert.alert(
-        "Error de Permisos",
-        "Asegúrate de que tu usuario tenga rol 'admin' en Firestore.",
-      );
-      console.error(e);
+      Alert.alert("Error", "Error al consultar citas.");
     } finally {
       setLoading(false);
     }
   };
 
-  // 2. Escucha de Médicos
-  useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "especialidades"),
-      (snapshot) => {
-        const docs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setListaMedicos(docs);
-        if (docs.length > 0 && !medicoSel) setMedicoSel(docs[0].medico);
-      },
+  const enviarMasivo = async () => {
+    const seleccionados = citasManana.filter((c) => c.seleccionado);
+    for (const c of seleccionados) {
+      let tel = (c.telefonoPaciente || "").replace(/\D/g, "");
+      if (tel.startsWith("0")) tel = "593" + tel.substring(1);
+      const msg = `Hola ${c.nombrePaciente}, confirmamos su cita de ${c.especialidad || "Odontología"} para mañana a las ${c.hora}. ¿Nos confirma su asistencia?`;
+      await Linking.openURL(
+        `https://api.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent(msg)}`,
+      );
+      await new Promise((r) => setTimeout(r, 1200)); // Delay para evitar bloqueos
+    }
+    setModalWA(false);
+  };
+
+  // 3. Gestión de Cumpleaños
+  const esCumpleanos = (fechaNac) => {
+    if (!fechaNac) return false;
+    const hoy = new Date();
+    const cumple = new Date(fechaNac);
+    return (
+      hoy.getDate() === cumple.getDate() && hoy.getMonth() === cumple.getMonth()
     );
-    return () => unsubscribe();
-  }, []);
+  };
 
-  // 3. Escucha de Citas
-  useEffect(() => {
-    if (vistaActual !== "agenda" || !medicoSel) return;
-    const q = query(
-      collection(db, "citas"),
-      where("fecha", "==", fechaSel),
-      where("medico", "==", medicoSel),
-    );
-    return onSnapshot(q, (snapshot) => {
-      setCitas(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-  }, [fechaSel, medicoSel, vistaActual]);
-
-  // 4. Escucha de Clientes
-  useEffect(() => {
-    if (vistaActual !== "clientes") return;
-    return onSnapshot(collection(db, "users"), (snapshot) => {
-      setClientes(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-  }, [vistaActual]);
-
-  // Lógica de filtrado y mapeo (se mantiene igual)
+  // 4. Mapeo de Agenda
   const agendaMap = useMemo(() => {
     const map = {};
     citas.forEach((cita) => {
@@ -176,32 +202,19 @@ export default function AdminMasterPanel() {
         <View style={styles.headerTop}>
           <Text style={styles.headerTitle}>333K Master Panel</Text>
           <View style={{ flexDirection: "row" }}>
-            {/* BOTÓN TEMPORAL DE INICIALIZACIÓN */}
-            <TouchableOpacity
-              onPress={ejecutarInicializacion}
-              style={[
-                styles.iconBtn,
-                {
-                  backgroundColor: "rgba(255,0,0,0.3)",
-                  borderRadius: 5,
-                  padding: 2,
-                },
-              ]}
-            >
+            <TouchableOpacity onPress={prepararWA} style={styles.iconBtn}>
               <MaterialCommunityIcons
-                name="database-plus"
-                size={24}
-                color="#FF5252"
+                name="whatsapp"
+                size={26}
+                color="#25D366"
               />
             </TouchableOpacity>
-
             <TouchableOpacity
               onPress={() => setModalMedicos(true)}
               style={styles.iconBtn}
             >
               <MaterialCommunityIcons name="doctor" size={26} color="#fff" />
             </TouchableOpacity>
-
             <TouchableOpacity
               onPress={() =>
                 setVistaActual(vistaActual === "agenda" ? "clientes" : "agenda")
@@ -238,7 +251,6 @@ export default function AdminMasterPanel() {
         )}
       </View>
 
-      {/* RENDERIZADO DE VISTAS (Agenda / Clientes) */}
       {vistaActual === "agenda" ? (
         <ScrollView contentContainerStyle={styles.grid}>
           {HORARIOS.map((h) => {
@@ -275,65 +287,175 @@ export default function AdminMasterPanel() {
                 .includes(busqueda.toLowerCase()),
             )}
             keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <View style={styles.clienteCard}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.clienteName}>
-                    {item.nombre || item.displayName || "Paciente"}
-                  </Text>
-                  <Text style={styles.millasText}>
-                    Millas: {item.puntosSalud || 0}
-                  </Text>
+            renderItem={({ item }) => {
+              const cumple = esCumpleanos(item.fechaNacimiento);
+              return (
+                <View style={[styles.clienteCard, cumple && styles.cardCumple]}>
+                  <View style={styles.cardHeader}>
+                    <View>
+                      <View
+                        style={{ flexDirection: "row", alignItems: "center" }}
+                      >
+                        <Text style={styles.clienteName}>
+                          {item.nombre || item.displayName || "Paciente"}
+                        </Text>
+                        {cumple && (
+                          <MaterialCommunityIcons
+                            name="cake-variant"
+                            size={18}
+                            color="#FF4081"
+                            style={{ marginLeft: 5 }}
+                          />
+                        )}
+                      </View>
+                      {cumple && (
+                        <Text style={styles.cumpleAlerta}>
+                          ¡Hoy es su cumpleaños!
+                        </Text>
+                      )}
+                    </View>
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>
+                        {item.tipoCliente || "PRI"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.millasRow}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        flex: 1,
+                      }}
+                    >
+                      <Text style={styles.millasLabel}>Millas:</Text>
+                      <TextInput
+                        style={styles.millasInput}
+                        keyboardType="numeric"
+                        defaultValue={String(item.puntosSalud || 0)}
+                        onEndEditing={(e) =>
+                          updateDoc(doc(db, "users", item.id), {
+                            puntosSalud: Number(e.nativeEvent.text),
+                          })
+                        }
+                      />
+                    </View>
+                    <View style={{ flexDirection: "row" }}>
+                      <TouchableOpacity
+                        onPress={() =>
+                          updateDoc(doc(db, "users", item.id), {
+                            puntosSalud: increment(10),
+                          })
+                        }
+                        style={styles.btnAccion}
+                      >
+                        <Text style={styles.btnText}>+10</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() =>
+                          updateDoc(doc(db, "users", item.id), {
+                            puntosSalud: increment(-10),
+                          })
+                        }
+                        style={styles.btnAccion}
+                      >
+                        <Text style={styles.btnText}>-10</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 </View>
-                <View style={styles.millasActions}>
-                  <TouchableOpacity
-                    onPress={() =>
-                      updateDoc(doc(db, "users", item.id), {
-                        puntosSalud: increment(10),
-                      })
-                    }
-                    style={styles.btnMilla}
-                  >
-                    <Text style={{ color: "#fff" }}>+10</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() =>
-                      updateDoc(doc(db, "users", item.id), {
-                        puntosSalud: increment(-10),
-                      })
-                    }
-                    style={styles.btnMilla}
-                  >
-                    <Text style={{ color: "#fff" }}>-10</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+              );
+            }}
           />
         </View>
       )}
 
-      {/* MODAL GESTIÓN MÉDICOS */}
-      <Modal visible={modalMedicos} transparent animationType="slide">
+      {/* MODAL WHATSAPP MASIVO */}
+      <Modal visible={modalWA} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Editar Especialistas</Text>
-            {listaMedicos.map((m) => (
-              <View key={m.id} style={{ marginBottom: 10 }}>
-                <Text style={{ fontSize: 12, fontWeight: "bold" }}>
-                  {m.nombre}
-                </Text>
-                <TextInput
-                  style={styles.inputEdit}
-                  defaultValue={m.medico}
-                  onEndEditing={(e) =>
-                    updateDoc(doc(db, "especialidades", m.id), {
-                      medico: e.nativeEvent.text,
-                    })
+            <Text style={styles.modalTitle}>Confirmaciones para Mañana</Text>
+            <FlatList
+              data={citasManana}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  onPress={() =>
+                    setCitasManana(
+                      citasManana.map((x) =>
+                        x.id === item.id
+                          ? { ...x, seleccionado: !x.seleccionado }
+                          : x,
+                      ),
+                    )
                   }
-                />
-              </View>
-            ))}
+                  style={styles.waItem}
+                >
+                  <MaterialCommunityIcons
+                    name={
+                      item.seleccionado
+                        ? "checkbox-marked"
+                        : "checkbox-blank-outline"
+                    }
+                    size={24}
+                    color={COLORS.primaryGreen}
+                  />
+                  <View style={{ marginLeft: 10 }}>
+                    <Text style={{ fontWeight: "bold" }}>
+                      {item.nombrePaciente}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: "#666" }}>
+                      {item.hora} - {item.medico}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
+            <TouchableOpacity onPress={enviarMasivo} style={styles.btnPrimario}>
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                ENVIAR MENSAJES
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setModalWA(false)}
+              style={styles.btnSecundario}
+            >
+              <Text>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL EDITAR MEDICOS */}
+      <Modal visible={modalMedicos} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Especialistas Activos</Text>
+            <ScrollView>
+              {listaMedicos.map((m) => (
+                <View key={m.id} style={{ marginBottom: 10 }}>
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      color: COLORS.primaryGreen,
+                      fontWeight: "bold",
+                    }}
+                  >
+                    {m.nombre}
+                  </Text>
+                  <TextInput
+                    style={styles.inputEdit}
+                    defaultValue={m.medico}
+                    onEndEditing={(e) =>
+                      updateDoc(doc(db, "especialidades", m.id), {
+                        medico: e.nativeEvent.text,
+                      })
+                    }
+                  />
+                </View>
+              ))}
+            </ScrollView>
             <TouchableOpacity
               onPress={() => setModalMedicos(false)}
               style={styles.btnClose}
@@ -370,7 +492,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerTitle: { color: "#fff", fontSize: 18, fontWeight: "bold" },
-  iconBtn: { marginLeft: 10, padding: 4 },
+  iconBtn: { marginLeft: 15 },
   tab: {
     paddingVertical: 8,
     paddingHorizontal: 15,
@@ -385,6 +507,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
+    paddingBottom: 50,
   },
   slot: {
     width: "23%",
@@ -400,44 +523,111 @@ const styles = StyleSheet.create({
   slotText: { fontSize: 10, color: "#CCC" },
   pacienteTag: { fontSize: 7, fontWeight: "bold", textAlign: "center" },
   bgRojo: { backgroundColor: "#FF5252" },
+  searchBar: {
+    backgroundColor: "#fff",
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 15,
+  },
   clienteCard: {
     backgroundColor: "#fff",
     padding: 15,
     borderRadius: 15,
     marginBottom: 10,
+    elevation: 2,
   },
-  cardHeader: { flexDirection: "row", justifyContent: "space-between" },
-  clienteName: { fontWeight: "bold" },
-  millasText: { color: COLORS.primaryGreen, fontWeight: "bold" },
-  millasActions: { flexDirection: "row", marginTop: 10 },
-  btnMilla: {
+  cardCumple: {
+    borderColor: "#FF4081",
+    borderWidth: 2,
+    backgroundColor: "#FFF5F8",
+  },
+  cumpleAlerta: { fontSize: 10, color: "#FF4081", fontWeight: "bold" },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  clienteName: { fontWeight: "bold", fontSize: 15 },
+  badge: {
     backgroundColor: COLORS.darkGreen,
-    padding: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
     borderRadius: 5,
-    marginRight: 10,
+  },
+  badgeText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
+  millasRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 12,
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderColor: "#EEE",
+    paddingTop: 10,
+  },
+  millasLabel: { fontSize: 12, color: "#666" },
+  millasInput: {
+    backgroundColor: "#F0F0F0",
+    width: 60,
+    textAlign: "center",
+    fontWeight: "bold",
+    borderRadius: 5,
+    padding: 5,
+    marginHorizontal: 5,
+    color: COLORS.darkGreen,
+  },
+  btnAccion: {
+    backgroundColor: COLORS.primaryGreen,
+    padding: 6,
+    borderRadius: 8,
+    marginLeft: 5,
     width: 40,
     alignItems: "center",
   },
-  searchBar: {
-    backgroundColor: "#fff",
-    padding: 10,
-    borderRadius: 10,
-    marginBottom: 10,
-  },
+  btnText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
     padding: 20,
   },
-  modalContent: { backgroundColor: "#fff", padding: 20, borderRadius: 20 },
-  modalTitle: { fontWeight: "bold", marginBottom: 15, textAlign: "center" },
-  inputEdit: { borderBottomWidth: 1, borderColor: "#ccc", padding: 5 },
+  modalContent: {
+    backgroundColor: "#fff",
+    padding: 20,
+    borderRadius: 25,
+    maxHeight: "80%",
+  },
+  modalTitle: {
+    fontWeight: "bold",
+    fontSize: 16,
+    marginBottom: 15,
+    textAlign: "center",
+  },
+  waItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderBottomWidth: 1,
+    borderColor: "#EEE",
+  },
+  btnPrimario: {
+    backgroundColor: "#25D366",
+    padding: 15,
+    borderRadius: 15,
+    alignItems: "center",
+    marginTop: 20,
+  },
+  btnSecundario: { padding: 15, alignItems: "center" },
+  inputEdit: {
+    borderBottomWidth: 1,
+    borderColor: "#DDD",
+    paddingVertical: 5,
+    fontSize: 14,
+  },
   btnClose: {
     backgroundColor: COLORS.darkGreen,
-    padding: 10,
-    borderRadius: 10,
-    marginTop: 20,
+    padding: 12,
+    borderRadius: 15,
+    marginTop: 15,
     alignItems: "center",
   },
   loader: { position: "absolute", top: "50%", alignSelf: "center" },
