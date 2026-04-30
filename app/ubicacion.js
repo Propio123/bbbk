@@ -27,7 +27,7 @@ const Ubicacion = () => {
   };
 
   const llamarClinica = () => {
-    Linking.openURL("tel:+593969743150"); // Número configurado previamente
+    Linking.openURL("tel:+593999036517"); // Número configurado previamente
   };
 
   return (
