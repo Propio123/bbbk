@@ -79,7 +79,7 @@ const HomeScreen = () => {
             <MenuButton
               icon="map-marker-radius-outline"
               label="UBICACIÓN"
-              onPress={() => router.push("/info")}
+              onPress={() => router.push("/ubicacion")}
             />
           </View>
 
