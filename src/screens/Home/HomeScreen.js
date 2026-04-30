@@ -10,7 +10,6 @@ import {
   View,
 } from "react-native";
 
-// Importamos el ScreenWrapper que ya tiene el logo grande y cuadrado
 import { ScreenWrapper } from "../../../components/ScreenWrapper";
 import { auth, db } from "../../api/firebase.config";
 import { COLORS } from "../../constants/theme";
@@ -52,10 +51,8 @@ const HomeScreen = () => {
     <ScreenWrapper showBack={false}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.body}>
-          {/* Slogan institucional */}
           <Text style={styles.sloganText}>Sonriendo junto a ti</Text>
 
-          {/* Saludo dinámico */}
           <View style={styles.welcomeContainer}>
             <Text style={styles.welcomeTitle}>
               Hola, {userData ? userData.nombre : "Bienvenido"}
@@ -63,7 +60,43 @@ const HomeScreen = () => {
             <Text style={styles.subtitle}>Tu Clínica Dental Digital</Text>
           </View>
 
-          {/* Grid de Servicios - FILA 1: Gestión de Citas y Mapa */}
+          {/* Panel de Fidelización con puntosSalud y tipoCliente */}
+          <View style={styles.pointsCard}>
+            <View style={styles.pointsHeader}>
+              <View style={styles.badgeContainer}>
+                <MaterialCommunityIcons
+                  name="shield-check"
+                  size={20}
+                  color="#fff"
+                />
+                <Text style={styles.typeText}>
+                  {userData?.tipoCliente || "Cliente Fiel"}
+                </Text>
+              </View>
+              <MaterialCommunityIcons
+                name="leaf"
+                size={24}
+                color="rgba(255,255,255,0.6)"
+              />
+            </View>
+
+            <View style={styles.pointsMain}>
+              <View>
+                <Text style={styles.pointsLabel}>Puntos Salud Acumulados</Text>
+                <Text style={styles.pointsValue}>
+                  {userData?.puntosSalud || 0}{" "}
+                  <Text style={styles.pointsUnit}>pts</Text>
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.redeemButton}
+                onPress={() => router.push("/beneficios")}
+              >
+                <Text style={styles.redeemButtonText}>Canjear</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
           <View style={styles.grid}>
             <MenuButton
               icon="calendar-plus"
@@ -75,7 +108,6 @@ const HomeScreen = () => {
               label="MIS CITAS"
               onPress={() => router.push("/miscitas")}
             />
-            {/* Reemplazo de Historial por Ubicación (Info) */}
             <MenuButton
               icon="map-marker-radius-outline"
               label="UBICACIÓN"
@@ -83,7 +115,6 @@ const HomeScreen = () => {
             />
           </View>
 
-          {/* Grid de Servicios - FILA 2: Info de Clínica y Usuario */}
           <View style={[styles.grid, { marginTop: 25 }]}>
             <MenuButton
               icon="tooth-outline"
@@ -98,7 +129,7 @@ const HomeScreen = () => {
             <MenuButton
               icon="whatsapp"
               label="INFO"
-              onPress={() => router.push("/info")} // O vincular directo a WhatsApp
+              onPress={() => router.push("/info")}
             />
           </View>
         </View>
@@ -122,7 +153,7 @@ const styles = StyleSheet.create({
   },
   welcomeContainer: {
     alignItems: "center",
-    marginBottom: 35,
+    marginBottom: 20,
   },
   welcomeTitle: {
     fontSize: 24,
@@ -135,6 +166,72 @@ const styles = StyleSheet.create({
     color: "#666",
     marginTop: 5,
   },
+  // --- Estilos para Puntos Salud ---
+  pointsCard: {
+    backgroundColor: COLORS.darkGreen || "#1A3A34",
+    width: "100%",
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 35,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 6,
+  },
+  pointsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 15,
+  },
+  badgeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.15)",
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+  },
+  typeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "bold",
+    marginLeft: 6,
+    textTransform: "uppercase",
+  },
+  pointsMain: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+  },
+  pointsLabel: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 13,
+    marginBottom: 2,
+  },
+  pointsValue: {
+    color: "#fff",
+    fontSize: 32,
+    fontWeight: "bold",
+  },
+  pointsUnit: {
+    fontSize: 16,
+    fontWeight: "normal",
+    color: COLORS.primaryGreen,
+  },
+  redeemButton: {
+    backgroundColor: COLORS.primaryGreen,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+  },
+  redeemButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 14,
+  },
+  // --- Grid ---
   grid: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -161,7 +258,7 @@ const styles = StyleSheet.create({
     borderColor: "#F0F0F0",
   },
   menuLabel: {
-    fontSize: 10, // Un punto menos para evitar desbordamiento de texto
+    fontSize: 10,
     fontWeight: "bold",
     color: "#444",
     textAlign: "center",

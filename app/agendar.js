@@ -73,7 +73,7 @@ const SERVICIOS = [
     id: "gen",
     nombre: "General",
     duracion: 30,
-    medico: "Dr. Doménica Palma",
+    medico: "Dra. Doménica Palma",
     img: {
       uri: "https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=500",
     },
@@ -245,7 +245,7 @@ const AgendarCitaClient = () => {
 
       const msg = `🦷 *Nueva Solicitud Cita*\n\nServicio: ${servicioSel.nombre}\nMedico: ${servicioSel.medico}\nFecha: ${fechaSel}\nHora: ${horaSel}`;
       await Linking.openURL(
-        `whatsapp://send?phone=593969743150&text=${encodeURIComponent(msg)}`,
+        `whatsapp://send?phone=593999036517&text=${encodeURIComponent(msg)}`,
       );
     } catch (e) {
       Alert.alert("Error", e.message);
