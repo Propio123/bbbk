@@ -9,7 +9,7 @@ import {
   onSnapshot,
   orderBy,
   query,
-  updateDoc
+  updateDoc,
 } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import {
@@ -38,18 +38,20 @@ export default function AdminMasterPanel() {
   const [clienteEdicion, setClienteEdicion] = useState(null);
 
   useEffect(() => {
-    // Suscripción en tiempo real a Citas
+    // 1. Escuchar Citas (Asegúrate que la colección en Firebase sea 'citas')
     const unsubCitas = onSnapshot(
-      query(collection(db, "appointments"), orderBy("fecha", "asc")),
+      query(collection(db, "citas"), orderBy("fecha", "asc")),
       (snap) => {
         setCitas(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       },
     );
-    // Suscripción a Clientes (Pacientes)
+
+    // 2. Escuchar Clientes
     const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
       setClientes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
-    // Suscripción a Especialidades
+
+    // 3. Escuchar Especialidades
     const unsubEsp = onSnapshot(collection(db, "especialidades"), (snap) => {
       setEspecialidades(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
@@ -61,10 +63,9 @@ export default function AdminMasterPanel() {
     };
   }, []);
 
-  // --- LÓGICA DE WHATSAPP ---
+  // --- LÓGICA DE COMUNICACIÓN ---
   const enviarWhatsApp = (telefono, mensaje) => {
-    if (!telefono)
-      return Alert.alert("Error", "El cliente no tiene teléfono registrado.");
+    if (!telefono) return Alert.alert("Error", "Teléfono no registrado.");
     let num = telefono.replace(/\D/g, "");
     if (num.startsWith("0")) num = "593" + num.substring(1);
     const url = `https://api.whatsapp.com/send?phone=${num}&text=${encodeURIComponent(mensaje)}`;
@@ -72,18 +73,11 @@ export default function AdminMasterPanel() {
   };
 
   const confirmarCita = (cita) => {
-    const msj = `Hola ${cita.nombrePaciente}, te saluda BBBK. Confirmamos tu cita de ${cita.especialidad} para mañana ${cita.fecha} a las ${cita.hora}. ¿Contamos con tu asistencia?`;
+    const msj = `Hola ${cita.nombrePaciente}, te saludamos de BBBK. Confirmamos tu cita de ${cita.especialidad} para mañana ${cita.fecha} a las ${cita.hora}. ¿Confirmas tu asistencia?`;
     enviarWhatsApp(cita.telefono, msj);
   };
 
-  // --- LÓGICA DE ESPECIALIDADES ---
-  const agregarEspecialidad = async () => {
-    if (!nuevaEsp.trim()) return;
-    await addDoc(collection(db, "especialidades"), { nombre: nuevaEsp.trim() });
-    setNuevaEsp("");
-  };
-
-  // --- LÓGICA DE CUMPLEAÑOS ---
+  // --- LÓGICA DE NEGOCIO ---
   const esCumpleHoy = (fechaStr) => {
     if (!fechaStr) return false;
     const hoy = new Date();
@@ -92,10 +86,10 @@ export default function AdminMasterPanel() {
   };
 
   const handleLogout = () => {
-    Alert.alert("Cerrar Sesión", "¿Seguro que desea salir?", [
-      { text: "Cancelar", style: "cancel" },
+    Alert.alert("Salir", "¿Cerrar sesión administrativa?", [
+      { text: "No" },
       {
-        text: "Salir",
+        text: "Sí",
         onPress: () => signOut(auth).then(() => router.replace("/login")),
       },
     ]);
@@ -103,14 +97,14 @@ export default function AdminMasterPanel() {
 
   return (
     <View style={styles.container}>
-      {/* HEADER DINÁMICO */}
+      {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <TouchableOpacity onPress={handleLogout}>
-            <MaterialCommunityIcons name="logout" size={28} color="#FF5252" />
+            <MaterialCommunityIcons name="power" size={30} color="#FF5252" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>ADMIN BBBK</Text>
-          <View style={{ width: 28 }} />
+          <Text style={styles.headerTitle}>PANEL DE CONTROL BBBK</Text>
+          <View style={{ width: 30 }} />
         </View>
 
         <ScrollView
@@ -119,19 +113,19 @@ export default function AdminMasterPanel() {
           style={styles.navBar}
         >
           <NavButton
-            icon="calendar-clock"
+            icon="calendar-check"
             label="Citas"
             active={vistaActual === "citas"}
             onPress={() => setVistaActual("citas")}
           />
           <NavButton
-            icon="account-group"
-            label="Clientes"
+            icon="account-multiple"
+            label="Pacientes"
             active={vistaActual === "clientes"}
             onPress={() => setVistaActual("clientes")}
           />
           <NavButton
-            icon="stethoscope"
+            icon="briefcase-medical"
             label="Especialidades"
             active={vistaActual === "especialidades"}
             onPress={() => setVistaActual("especialidades")}
@@ -148,9 +142,11 @@ export default function AdminMasterPanel() {
             renderItem={({ item }) => (
               <View style={styles.card}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.cardTitle}>{item.nombrePaciente}</Text>
+                  <Text style={styles.cardTitle}>
+                    {item.nombrePaciente || "Paciente"}
+                  </Text>
                   <Text style={styles.cardSub}>
-                    {item.especialidad} - {item.fecha} {item.hora}
+                    {item.especialidad} | {item.fecha} - {item.hora}
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -168,17 +164,17 @@ export default function AdminMasterPanel() {
           />
         )}
 
-        {/* VISTA CLIENTES (CON GESTIÓN DE CUMPLEAÑOS) */}
+        {/* VISTA CLIENTES (Gestión LOPDP de fechas) */}
         {vistaActual === "clientes" && (
           <View style={{ flex: 1 }}>
             <TextInput
-              placeholder="Buscar paciente..."
+              placeholder="Buscar por nombre..."
               style={styles.searchBar}
               onChangeText={setBusqueda}
             />
             <FlatList
               data={clientes.filter((c) =>
-                c.nombre?.toLowerCase().includes(busqueda.toLowerCase()),
+                (c.nombre || "").toLowerCase().includes(busqueda.toLowerCase()),
               )}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
@@ -187,7 +183,9 @@ export default function AdminMasterPanel() {
                   onPress={() => setClienteEdicion(item)}
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.cardTitle}>{item.nombre}</Text>
+                    <Text style={styles.cardTitle}>
+                      {item.nombre || "Sin Nombre"}
+                    </Text>
                     <Text
                       style={[
                         styles.cardSub,
@@ -199,14 +197,14 @@ export default function AdminMasterPanel() {
                       ]}
                     >
                       {item.fechaNacimiento
-                        ? `Cumpleaños: ${item.fechaNacimiento}`
-                        : "⚠️ Sin fecha registrada"}
+                        ? `Cumple: ${item.fechaNacimiento}`
+                        : "⚠️ Falta fecha de nacimiento"}
                     </Text>
                   </View>
                   {esCumpleHoy(item.fechaNacimiento) && (
                     <MaterialCommunityIcons
                       name="cake-variant"
-                      size={24}
+                      size={26}
                       color="#E91E63"
                     />
                   )}
@@ -221,13 +219,20 @@ export default function AdminMasterPanel() {
           <View style={{ flex: 1 }}>
             <View style={styles.addArea}>
               <TextInput
-                placeholder="Nueva especialidad..."
+                placeholder="Nombre especialidad..."
                 style={[styles.searchBar, { flex: 1, marginBottom: 0 }]}
                 value={nuevaEsp}
                 onChangeText={setNuevaEsp}
               />
               <TouchableOpacity
-                onPress={agregarEspecialidad}
+                onPress={() => {
+                  if (nuevaEsp.trim()) {
+                    addDoc(collection(db, "especialidades"), {
+                      nombre: nuevaEsp.trim(),
+                    });
+                    setNuevaEsp("");
+                  }
+                }}
                 style={styles.btnAdd}
               >
                 <MaterialCommunityIcons name="plus" size={24} color="#FFF" />
@@ -235,9 +240,10 @@ export default function AdminMasterPanel() {
             </View>
             <FlatList
               data={especialidades}
+              keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <View style={styles.card}>
-                  <Text style={{ flex: 1, fontWeight: "bold" }}>
+                  <Text style={{ flex: 1, fontWeight: "600" }}>
                     {item.nombre}
                   </Text>
                   <TouchableOpacity
@@ -258,12 +264,13 @@ export default function AdminMasterPanel() {
         )}
       </View>
 
-      {/* MODAL EDITOR DE CLIENTE (FECHAS MANUALES) */}
-      <Modal visible={!!clienteEdicion} transparent animationType="fade">
+      {/* MODAL PARA ACTUALIZAR FECHAS FALTANTES */}
+      <Modal visible={!!clienteEdicion} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Actualizar Paciente</Text>
-            <Text style={styles.label}>Nombre:</Text>
+            <Text style={styles.modalTitle}>Editar Información</Text>
+
+            <Text style={styles.label}>Nombre del Paciente:</Text>
             <TextInput
               style={styles.modalInput}
               value={clienteEdicion?.nombre}
@@ -271,33 +278,52 @@ export default function AdminMasterPanel() {
                 setClienteEdicion({ ...clienteEdicion, nombre: t })
               }
             />
-            <Text style={styles.label}>Fecha Nacimiento (AAAA-MM-DD):</Text>
+
+            <Text style={styles.label}>Fecha de Nacimiento (AAAA-MM-DD):</Text>
             <TextInput
               style={styles.modalInput}
-              placeholder="1990-05-24"
+              placeholder="1995-10-15"
               value={clienteEdicion?.fechaNacimiento}
-              onChangeText={(t) =>
-                setClienteEdicion({ ...clienteEdicion, fechaNacimiento: t })
-              }
+              onChangeText={(t) => {
+                // Máscara básica
+                let val = t.replace(/\D/g, "");
+                if (val.length > 4 && val.length <= 6)
+                  val = `${val.slice(0, 4)}-${val.slice(4)}`;
+                else if (val.length > 6)
+                  val = `${val.slice(0, 4)}-${val.slice(4, 6)}-${val.slice(6, 8)}`;
+                setClienteEdicion({ ...clienteEdicion, fechaNacimiento: val });
+              }}
+              maxLength={10}
             />
+
             <TouchableOpacity
               style={styles.btnSave}
               onPress={async () => {
+                const regex =
+                  /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
+                if (
+                  clienteEdicion.fechaNacimiento &&
+                  !regex.test(clienteEdicion.fechaNacimiento)
+                ) {
+                  return Alert.alert("Error", "Formato de fecha inválido.");
+                }
                 await updateDoc(doc(db, "users", clienteEdicion.id), {
                   nombre: clienteEdicion.nombre,
-                  fechaNacimiento: clienteEdicion.fechaNacimiento,
+                  fechaNacimiento: clienteEdicion.fechaNacimiento || "",
                 });
                 setClienteEdicion(null);
-                Alert.alert("Éxito", "Datos actualizados");
               }}
             >
-              <Text style={styles.btnSaveText}>GUARDAR CAMBIOS</Text>
+              <Text style={styles.btnSaveText}>GUARDAR</Text>
             </TouchableOpacity>
+
             <TouchableOpacity
               onPress={() => setClienteEdicion(null)}
               style={{ marginTop: 15 }}
             >
-              <Text style={{ textAlign: "center", color: "#666" }}>Cerrar</Text>
+              <Text style={{ textAlign: "center", color: "#999" }}>
+                Cancelar
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -306,7 +332,6 @@ export default function AdminMasterPanel() {
   );
 }
 
-// Componente auxiliar para botones de navegación
 const NavButton = ({ icon, label, active, onPress }) => (
   <TouchableOpacity
     onPress={onPress}
@@ -315,7 +340,7 @@ const NavButton = ({ icon, label, active, onPress }) => (
     <MaterialCommunityIcons
       name={icon}
       size={20}
-      color={active ? "#FFF" : "#CCC"}
+      color={active ? "#FFF" : "#888"}
     />
     <Text style={[styles.navBtnText, active && styles.navBtnTextActive]}>
       {label}
@@ -324,88 +349,112 @@ const NavButton = ({ icon, label, active, onPress }) => (
 );
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8F9FB" },
+  container: { flex: 1, backgroundColor: "#F4F6F8" },
   header: {
     backgroundColor: COLORS.darkGreen,
-    paddingBottom: 20,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
+    paddingBottom: 25,
+    borderBottomLeftRadius: 35,
+    borderBottomRightRadius: 35,
     paddingTop: 50,
   },
   headerTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
+    paddingHorizontal: 25,
   },
-  headerTitle: { color: "#FFF", fontSize: 18, fontWeight: "bold" },
-  navBar: { flexDirection: "row", marginTop: 20, paddingLeft: 20 },
+  headerTitle: {
+    color: "#FFF",
+    fontSize: 16,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
+  navBar: { flexDirection: "row", marginTop: 25, paddingLeft: 25 },
   navBtn: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 15,
-    paddingVertical: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
     borderRadius: 20,
-    marginRight: 10,
-    backgroundColor: "rgba(255,255,255,0.1)",
+    marginRight: 12,
+    backgroundColor: "rgba(255,255,255,0.08)",
   },
   navBtnActive: { backgroundColor: COLORS.primaryGreen },
-  navBtnText: { color: "#CCC", marginLeft: 5, fontSize: 12 },
+  navBtnText: { color: "#888", marginLeft: 8, fontSize: 12, fontWeight: "500" },
   navBtnTextActive: { color: "#FFF", fontWeight: "bold" },
   content: { flex: 1, padding: 20 },
   card: {
     backgroundColor: "#FFF",
-    padding: 15,
-    borderRadius: 20,
-    marginBottom: 12,
+    padding: 18,
+    borderRadius: 22,
+    marginBottom: 15,
     flexDirection: "row",
     alignItems: "center",
-    elevation: 2,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-  cardTitle: { fontWeight: "bold", fontSize: 15 },
-  cardSub: { fontSize: 12, color: "#666", marginTop: 2 },
-  btnWs: { backgroundColor: "#25D366", padding: 10, borderRadius: 12 },
+  cardTitle: { fontWeight: "700", fontSize: 16, color: COLORS.darkGreen },
+  cardSub: { fontSize: 13, color: "#777", marginTop: 4 },
+  btnWs: { backgroundColor: "#25D366", padding: 12, borderRadius: 15 },
   searchBar: {
     backgroundColor: "#FFF",
-    padding: 12,
-    borderRadius: 15,
-    marginBottom: 15,
-    elevation: 1,
+    padding: 15,
+    borderRadius: 18,
+    marginBottom: 20,
+    elevation: 2,
+    fontSize: 14,
   },
-  addArea: { flexDirection: "row", marginBottom: 15, gap: 10 },
+  addArea: { flexDirection: "row", marginBottom: 20, gap: 12 },
   btnAdd: {
     backgroundColor: COLORS.primaryGreen,
-    padding: 12,
-    borderRadius: 15,
+    paddingHorizontal: 20,
+    borderRadius: 18,
     justifyContent: "center",
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "center",
-    padding: 20,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end",
   },
-  modalContent: { backgroundColor: "#FFF", padding: 25, borderRadius: 30 },
+  modalContent: {
+    backgroundColor: "#FFF",
+    padding: 30,
+    borderTopLeftRadius: 40,
+    borderTopRightRadius: 40,
+    minHeight: "50%",
+  },
   modalTitle: {
-    fontWeight: "bold",
-    fontSize: 18,
-    marginBottom: 20,
+    fontWeight: "800",
+    fontSize: 20,
+    marginBottom: 25,
     textAlign: "center",
+    color: COLORS.darkGreen,
   },
   modalInput: {
-    borderBottomWidth: 1,
-    borderColor: "#EEE",
-    paddingVertical: 8,
-    marginBottom: 15,
-    fontWeight: "bold",
-  },
-  label: { fontSize: 11, color: "#999" },
-  btnSave: {
-    backgroundColor: COLORS.primaryGreen,
+    backgroundColor: "#F8F9FA",
     padding: 15,
     borderRadius: 15,
+    marginBottom: 20,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  label: {
+    fontSize: 12,
+    color: "#AAA",
+    marginBottom: 8,
+    marginLeft: 5,
+    fontWeight: "600",
+  },
+  btnSave: {
+    backgroundColor: COLORS.primaryGreen,
+    padding: 18,
+    borderRadius: 20,
     alignItems: "center",
     marginTop: 10,
+    elevation: 4,
   },
-  btnSaveText: { color: "#FFF", fontWeight: "bold" },
+  btnSaveText: { color: "#FFF", fontWeight: "bold", fontSize: 16 },
 });
