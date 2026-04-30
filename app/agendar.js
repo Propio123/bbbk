@@ -74,7 +74,7 @@ const SERVICIOS = [
     id: "gen",
     nombre: "General",
     duracion: 30,
-    medico: "Dr. Chávez",
+    medico: "Dr. Doménica Palma",
     img: {
       uri: "https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=500",
     },
@@ -83,7 +83,7 @@ const SERVICIOS = [
     id: "ort",
     nombre: "Ortodoncia",
     duracion: 30,
-    medico: "Dra. Espinoza",
+    medico: "Dr. Bladimir Denavidez",
     img: {
       uri: "https://www.clinicadentallarranaga.com/wp-content/uploads/que_es_una_ortodoncia.jpg",
     },
@@ -92,7 +92,7 @@ const SERVICIOS = [
     id: "end",
     nombre: "Endodoncia",
     duracion: 60,
-    medico: "Dr. Ruiz",
+    medico: "Dr. Xavier C.",
     img: {
       uri: "https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=500",
     },
@@ -101,7 +101,7 @@ const SERVICIOS = [
     id: "cir",
     nombre: "Cirugía",
     duracion: 90,
-    medico: "Dra. Mora",
+    medico: "Dr. Darwin Congo",
     img: {
       uri: "https://images.unsplash.com/photo-1551076805-e1869033e561?w=500",
     },
@@ -110,7 +110,7 @@ const SERVICIOS = [
     id: "est",
     nombre: "Estética",
     duracion: 45,
-    medico: "Dr. León",
+    medico: "Dr. Santiago Benalcazar",
     img: {
       uri: "https://images.unsplash.com/photo-1606811841689-23dfddce3e95?w=500",
     },
@@ -119,18 +119,27 @@ const SERVICIOS = [
     id: "per",
     nombre: "Periodoncia",
     duracion: 30,
-    medico: "Dra. Vallejo",
+    medico: "Dra. Eliana Cespedes",
     img: {
-      uri: "https://images.unsplash.com/photo-1609840114035-3c981b782dfe?w=500",
+      uri: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRaqA3a4FMjxIamyVTtGQj7cPs0qTjRjelO7g&s",
     },
   },
   {
     id: "reh",
     nombre: "Rehabilitación",
     duracion: 60,
-    medico: "Dr. Castillo",
+    medico: "Dr. Jose Cargua",
     img: {
-      uri: "https://quatredental.com/wp-content/uploads/2023/12/rehabilitacion-carillas.jpg",
+      uri: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTGRLV8Z4wKO2wubIje4glcRu0QajOV7ermLg&s",
+    },
+  },
+  {
+    id: "adop",
+    nombre: "Odontopediatría",
+    duracion: 60,
+    medico: "Dra.Sofía Benavides",
+    img: {
+      uri: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQdw1rCOOQ4GmqRr7LCRE9MmB8GJtgpydrJSg&s",
     },
   },
 ];

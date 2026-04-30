@@ -17,7 +17,7 @@ const SERVICIOS_DATA = [
     descripcion:
       "Evaluación integral de tu salud bucal, limpieza profesional y diagnóstico con cámara intraoral.",
     icon: "tooth-outline",
-    precio: "Desde $30",
+    precio: "Desde $10",
   },
   {
     id: "2",
@@ -25,7 +25,7 @@ const SERVICIOS_DATA = [
     descripcion:
       "Diseño de sonrisa con brackets metálicos, cerámicos o alineadores invisibles para alinear tus dientes.",
     icon: "tooth",
-    precio: "Previa valoración",
+    precio: "Desde $1100",
   },
   {
     id: "3",
@@ -33,7 +33,7 @@ const SERVICIOS_DATA = [
     descripcion:
       "Tratamiento de conductos para salvar piezas dentales dañadas, eliminando el dolor de raíz.",
     icon: "medical-bag",
-    precio: "Desde $120",
+    precio: "140-210",
   },
   {
     id: "4",
@@ -41,7 +41,7 @@ const SERVICIOS_DATA = [
     descripcion:
       "Blanqueamiento dental láser, carillas de porcelana y diseño de encías para una sonrisa perfecta.",
     icon: "sparkles",
-    precio: "Desde $80",
+    precio: "Previo Valoración",
   },
   {
     id: "5",
@@ -49,7 +49,39 @@ const SERVICIOS_DATA = [
     descripcion:
       "Atención especializada para los más pequeños, enfocada en la prevención y pérdida del miedo al dentista.",
     icon: "face-man-shimmer-outline",
-    precio: "Desde $35",
+    precio: "Previo Valoración",
+  },
+  {
+    id: "6",
+    titulo: "Rehabilitación Oral",
+    descripcion:
+      "Atención especializada para los más pequeños, enfocada en la prevención y pérdida del miedo al dentista.",
+    icon: "face-man-shimmer-outline",
+    precio: "Previo Valoración",
+  },
+  {
+    id: "7",
+    titulo: "Cirugía Oral",
+    descripcion:
+      "Atención especializada para los más pequeños, enfocada en la prevención y pérdida del miedo al dentista.",
+    icon: "face-man-shimmer-outline",
+    precio: "Previo Valoración",
+  },
+  {
+    id: "8",
+    titulo: "Rayos X Panorámica",
+    descripcion:
+      "Atención especializada para los más pequeños, enfocada en la prevención y pérdida del miedo al dentista.",
+    icon: "face-man-shimmer-outline",
+    precio: "$15 ",
+  },
+  {
+    id: "9",
+    titulo: "Rayos X Tomografía",
+    descripcion:
+      "Atención especializada para los más pequeños, enfocada en la prevención y pérdida del miedo al dentista.",
+    icon: "face-man-shimmer-outline",
+    precio: "$40",
   },
 ];
 
