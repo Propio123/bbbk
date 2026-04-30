@@ -32,28 +32,17 @@ import {
 import { auth, db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
 
-const MEDICOS = [
-  "Dr. Chávez",
-  "Dra. Espinoza",
-  "Dr. Ruiz",
-  "Dra. Mora",
-  "Dr. León",
-  "Dra. Vallejo",
-  "Dr. Castillo",
-  "Dra. Paredes",
-  "Dr. Salazar",
-];
-
 export default function AdminMasterPanel() {
   const router = useRouter();
   const [vistaActual, setVistaActual] = useState("agenda"); // agenda, clientes, especialidades
   const [loading, setLoading] = useState(false);
 
-  // --- ESTADOS AGENDA & CLIENTES ---
+  // --- ESTADOS DINÁMICOS ---
   const [fechaSel, setFechaSel] = useState(
     new Date().toISOString().split("T")[0],
   );
-  const [medicoSel, setMedicoSel] = useState(MEDICOS[0]);
+  const [especialidades, setEspecialidades] = useState([]);
+  const [medicoSel, setMedicoSel] = useState(null);
   const [citas, setCitas] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [busqueda, setBusqueda] = useState("");
@@ -61,18 +50,30 @@ export default function AdminMasterPanel() {
   const [nuevoMedico, setNuevoMedico] = useState(null);
   const [seleccionMultiple, setSeleccionMultiple] = useState([]);
 
-  // --- NUEVOS ESTADOS (Especialidades y Edición) ---
-  const [especialidades, setEspecialidades] = useState([]);
   const [nuevaEsp, setNuevaEsp] = useState("");
   const [clienteEdicion, setClienteEdicion] = useState(null);
-
-  // --- ESTADOS WHATSAPP MODAL ---
   const [modalVisible, setModalVisible] = useState(false);
   const [citasManana, setCitasManana] = useState([]);
 
-  // 1. Escucha de Citas
+  // 1. ESCUCHA DE ESPECIALIDADES (Única fuente de verdad)
   useEffect(() => {
-    if (vistaActual !== "agenda") return;
+    const unsubEsp = onSnapshot(
+      query(collection(db, "especialidades"), orderBy("nombre")),
+      (snap) => {
+        const lista = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setEspecialidades(lista);
+        // Inicializar el filtro de la agenda con la primera especialidad disponible
+        if (lista.length > 0 && !medicoSel) {
+          setMedicoSel(lista[0].nombre);
+        }
+      },
+    );
+    return () => unsubEsp();
+  }, []);
+
+  // 2. ESCUCHA DE CITAS (Depende de la especialidad seleccionada)
+  useEffect(() => {
+    if (vistaActual !== "agenda" || !medicoSel) return;
     const q = query(
       collection(db, "citas"),
       where("fecha", "==", fechaSel),
@@ -84,7 +85,7 @@ export default function AdminMasterPanel() {
     return () => unsubscribe();
   }, [fechaSel, medicoSel, vistaActual]);
 
-  // 2. Escucha de Usuarios (Clientes)
+  // 3. ESCUCHA DE USUARIOS (LOPDP)
   useEffect(() => {
     if (vistaActual !== "clientes") return;
     const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
@@ -93,18 +94,7 @@ export default function AdminMasterPanel() {
     return () => unsubscribe();
   }, [vistaActual]);
 
-  // 3. Escucha de Especialidades
-  useEffect(() => {
-    const unsubEsp = onSnapshot(
-      query(collection(db, "especialidades"), orderBy("nombre")),
-      (snap) => {
-        setEspecialidades(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      },
-    );
-    return () => unsubEsp();
-  }, []);
-
-  // 4. Mapeo de Agenda para el Grid
+  // --- LÓGICA DE AGENDA ---
   const agendaMap = useMemo(() => {
     const map = {};
     citas.forEach((cita) => {
@@ -132,7 +122,6 @@ export default function AdminMasterPanel() {
       );
   }
 
-  // 5. Buscador de Clientes (con lógica de LOPDP)
   const clientesFiltrados = useMemo(() => {
     const term = busqueda.toLowerCase().trim();
     return clientes.filter(
@@ -149,7 +138,6 @@ export default function AdminMasterPanel() {
     return fechaStr.endsWith(mmdd);
   };
 
-  // --- LOGICA AGENDA ---
   const cancelarSeleccion = () => {
     setCitaBase(null);
     setSeleccionMultiple([]);
@@ -190,8 +178,7 @@ export default function AdminMasterPanel() {
   };
 
   const finalizarCitaManual = async () => {
-    if (!citaBase?.userId)
-      return Alert.alert("Error", "Cita sin usuario vinculado");
+    if (!citaBase?.userId) return Alert.alert("Error", "Sin usuario vinculado");
     setLoading(true);
     try {
       await updateDoc(doc(db, "users", citaBase.userId), {
@@ -200,16 +187,15 @@ export default function AdminMasterPanel() {
         ultimaAtencion: serverTimestamp(),
       });
       await updateDoc(doc(db, "citas", citaBase.id), { estado: "finalizada" });
-      Alert.alert("Éxito", "Atención finalizada.");
+      Alert.alert("Éxito", "Atención registrada.");
       cancelarSeleccion();
     } catch (e) {
-      Alert.alert("Error", "No se pudo finalizar.");
+      Alert.alert("Error", "Fallo al finalizar.");
     } finally {
       setLoading(false);
     }
   };
 
-  // --- LÓGICA WHATSAPP ---
   const prepararConfirmaciones = async () => {
     const manana = new Date();
     manana.setDate(manana.getDate() + 1);
@@ -302,16 +288,19 @@ export default function AdminMasterPanel() {
               showsHorizontalScrollIndicator={false}
               style={styles.medicoScroll}
             >
-              {MEDICOS.map((m) => (
+              {especialidades.map((esp) => (
                 <TouchableOpacity
-                  key={m}
+                  key={esp.id}
                   onPress={() => {
-                    setMedicoSel(m);
+                    setMedicoSel(esp.nombre);
                     cancelarSeleccion();
                   }}
-                  style={[styles.tab, medicoSel === m && styles.tabActive]}
+                  style={[
+                    styles.tab,
+                    medicoSel === esp.nombre && styles.tabActive,
+                  ]}
                 >
-                  <Text style={styles.tabText}>{m}</Text>
+                  <Text style={styles.tabText}>{esp.nombre}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -348,7 +337,7 @@ export default function AdminMasterPanel() {
         )}
       </View>
 
-      {/* CONTENIDO PRINCIPAL */}
+      {/* CUERPO PRINCIPAL */}
       {vistaActual === "agenda" ? (
         <ScrollView contentContainerStyle={styles.grid}>
           {HORARIOS.map((h) => {
@@ -477,7 +466,7 @@ export default function AdminMasterPanel() {
         <View style={styles.clientesContainer}>
           <View style={styles.addArea}>
             <TextInput
-              placeholder="Nueva especialidad..."
+              placeholder="Médico o Especialidad..."
               style={[styles.searchBar, { flex: 1, marginBottom: 0 }]}
               value={nuevaEsp}
               onChangeText={setNuevaEsp}
@@ -523,7 +512,7 @@ export default function AdminMasterPanel() {
         </View>
       )}
 
-      {/* FOOTER EDITOR AGENDA */}
+      {/* FOOTER EDITOR AGENDA (DINÁMICO) */}
       {citaBase && vistaActual === "agenda" && (
         <View style={styles.footerAccion}>
           <Text style={styles.footerText}>
@@ -534,18 +523,18 @@ export default function AdminMasterPanel() {
             showsHorizontalScrollIndicator={false}
             style={{ marginVertical: 8 }}
           >
-            {MEDICOS.map((m) => (
+            {especialidades.map((esp) => (
               <TouchableOpacity
-                key={m}
-                onPress={() => setNuevoMedico(m)}
+                key={esp.id}
+                onPress={() => setNuevoMedico(esp.nombre)}
                 style={[
                   styles.miniTab,
-                  (nuevoMedico === m ||
-                    (!nuevoMedico && citaBase.medico === m)) &&
+                  (nuevoMedico === esp.nombre ||
+                    (!nuevoMedico && citaBase.medico === esp.nombre)) &&
                     styles.miniTabActive,
                 ]}
               >
-                <Text style={styles.miniTabText}>{m}</Text>
+                <Text style={styles.miniTabText}>{esp.nombre}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -575,7 +564,7 @@ export default function AdminMasterPanel() {
         </View>
       )}
 
-      {/* MODAL EDICION CLIENTE (LOPDP) */}
+      {/* MODAL FICHA PACIENTE */}
       <Modal visible={!!clienteEdicion} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -629,7 +618,7 @@ export default function AdminMasterPanel() {
         </View>
       </Modal>
 
-      {/* MODAL WHATSAPP MASIVO */}
+      {/* MODAL WHATSAPP */}
       <Modal visible={modalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
