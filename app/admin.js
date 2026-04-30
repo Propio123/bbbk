@@ -43,20 +43,23 @@ const MEDICOS = [
 
 export default function AdminMasterPanel() {
   const router = useRouter();
-  const [vistaActual, setVistaActual] = useState("agenda");
+  const [vistaActual, setVistaActual] = useState("agenda"); // 'agenda' o 'clientes'
   const [loading, setLoading] = useState(false);
 
-  // --- ESTADOS AGENDA & CLIENTES ---
+  // --- ESTADOS AGENDA ---
   const [fechaSel, setFechaSel] = useState(
     new Date().toISOString().split("T")[0],
   );
   const [medicoSel, setMedicoSel] = useState(MEDICOS[0]);
   const [citas, setCitas] = useState([]);
-  const [clientes, setClientes] = useState([]);
-  const [busqueda, setBusqueda] = useState("");
   const [citaBase, setCitaBase] = useState(null);
   const [nuevoMedico, setNuevoMedico] = useState(null);
   const [seleccionMultiple, setSeleccionMultiple] = useState([]);
+
+  // --- ESTADOS CLIENTES & MILLAS ---
+  const [clientes, setClientes] = useState([]);
+  const [busqueda, setBusqueda] = useState("");
+  const [puntosEdit, setPuntosEdit] = useState({}); // Control local de edición de puntos
 
   // --- ESTADOS WHATSAPP MODAL ---
   const [modalVisible, setModalVisible] = useState(false);
@@ -113,7 +116,7 @@ export default function AdminMasterPanel() {
       );
   }
 
-  // 4. Buscador de Clientes Blindado
+  // 4. Buscador de Clientes
   const clientesFiltrados = useMemo(() => {
     const term = busqueda.toLowerCase().trim();
     if (!term) return clientes;
@@ -123,6 +126,29 @@ export default function AdminMasterPanel() {
         (c.email || "").toLowerCase().includes(term),
     );
   }, [clientes, busqueda]);
+
+  // --- LÓGICA GESTIÓN DE MILLAS (PUNTOS) ---
+  const ajustarPuntosLocal = (userId, actual, delta) => {
+    const base = puntosEdit[userId] ?? actual;
+    setPuntosEdit({ ...puntosEdit, [userId]: Math.max(0, base + delta) });
+  };
+
+  const guardarPuntosBD = async (userId) => {
+    const nuevosPuntos = puntosEdit[userId];
+    if (nuevosPuntos === undefined) return;
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, "users", userId), { puntosSalud: nuevosPuntos });
+      const copy = { ...puntosEdit };
+      delete copy[userId];
+      setPuntosEdit(copy);
+      Alert.alert("Éxito", "Millas actualizadas.");
+    } catch (e) {
+      Alert.alert("Error", "No se pudo actualizar.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // --- LOGICA AGENDA ---
   const cancelarSeleccion = () => {
@@ -147,8 +173,7 @@ export default function AdminMasterPanel() {
   };
 
   const finalizarCitaManual = async () => {
-    if (!citaBase?.userId)
-      return Alert.alert("Error", "Cita sin usuario vinculado");
+    if (!citaBase?.userId) return Alert.alert("Error", "Cita sin usuario");
     setLoading(true);
     try {
       await updateDoc(doc(db, "users", citaBase.userId), {
@@ -202,7 +227,7 @@ export default function AdminMasterPanel() {
       );
       setModalVisible(true);
     } catch (e) {
-      Alert.alert("Error", "Falta el índice en Firebase para esta consulta.");
+      Alert.alert("Error", "Error al consultar citas.");
     } finally {
       setLoading(false);
     }
@@ -227,7 +252,7 @@ export default function AdminMasterPanel() {
       {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <Text style={styles.headerTitle}>333K Master</Text>
+          <Text style={styles.headerTitle}>333K Master Panel</Text>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <TouchableOpacity
               onPress={prepararConfirmaciones}
@@ -357,62 +382,138 @@ export default function AdminMasterPanel() {
         <View style={styles.clientesContainer}>
           <TextInput
             style={styles.searchBar}
-            placeholder="Buscar por nombre o email..."
+            placeholder="Buscar cliente..."
             value={busqueda}
             onChangeText={setBusqueda}
           />
           <FlatList
             data={clientesFiltrados}
             keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <View style={styles.clienteCard}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.clienteName}>
-                    {item.displayName || "Paciente"}
-                  </Text>
-                  <View
-                    style={[
-                      styles.badge,
-                      {
-                        backgroundColor:
-                          item.tipoCliente === "PREMIUM"
-                            ? "#D4AF37"
-                            : item.tipoCliente === "PRO"
-                              ? "#C0C0C0"
-                              : "#CD7F32",
-                      },
-                    ]}
-                  >
-                    <Text style={styles.badgeText}>
-                      {item.tipoCliente || "PRI"}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.nivelesRow}>
-                  {["PRI", "PRO", "PREMIUM"].map((n) => (
-                    <TouchableOpacity
-                      key={n}
-                      onPress={() =>
-                        updateDoc(doc(db, "users", item.id), { tipoCliente: n })
-                      }
+            renderItem={({ item }) => {
+              const valorPuntos =
+                puntosEdit[item.id] ?? (item.puntosSalud || 0);
+              const hayCambioMillas = puntosEdit[item.id] !== undefined;
+
+              return (
+                <View style={styles.clienteCard}>
+                  <View style={styles.cardHeader}>
+                    <View>
+                      <Text style={styles.clienteName}>
+                        {item.displayName || "Paciente"}
+                      </Text>
+                      <Text style={{ fontSize: 10, color: "#666" }}>
+                        {item.email}
+                      </Text>
+                    </View>
+                    <View
                       style={[
-                        styles.nivelBtn,
-                        item.tipoCliente === n && styles.nivelBtnActive,
+                        styles.badge,
+                        {
+                          backgroundColor:
+                            item.tipoCliente === "PREMIUM"
+                              ? "#D4AF37"
+                              : item.tipoCliente === "PRO"
+                                ? "#C0C0C0"
+                                : "#CD7F32",
+                        },
                       ]}
                     >
+                      <Text style={styles.badgeText}>
+                        {item.tipoCliente || "PRI"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* GESTIÓN DE MILLAS */}
+                  <View style={styles.millasRow}>
+                    <View style={styles.millasInfo}>
+                      <MaterialCommunityIcons
+                        name="leaf"
+                        size={16}
+                        color={COLORS.primaryGreen}
+                      />
+                      <Text style={styles.millasLabel}>Millas:</Text>
                       <Text
                         style={[
-                          styles.nivelBtnText,
-                          item.tipoCliente === n && { color: "#FFF" },
+                          styles.millasValor,
+                          hayCambioMillas && { color: COLORS.primaryGreen },
                         ]}
                       >
-                        {n}
+                        {valorPuntos}
                       </Text>
-                    </TouchableOpacity>
-                  ))}
+                    </View>
+                    <View style={styles.millasControls}>
+                      <TouchableOpacity
+                        onPress={() =>
+                          ajustarPuntosLocal(
+                            item.id,
+                            item.puntosSalud || 0,
+                            -10,
+                          )
+                        }
+                        style={styles.btnMillaMini}
+                      >
+                        <MaterialCommunityIcons
+                          name="minus"
+                          size={14}
+                          color="#fff"
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() =>
+                          ajustarPuntosLocal(item.id, item.puntosSalud || 0, 10)
+                        }
+                        style={styles.btnMillaMini}
+                      >
+                        <MaterialCommunityIcons
+                          name="plus"
+                          size={14}
+                          color="#fff"
+                        />
+                      </TouchableOpacity>
+                      {hayCambioMillas && (
+                        <TouchableOpacity
+                          onPress={() => guardarPuntosBD(item.id)}
+                          style={styles.btnGuardarMillas}
+                        >
+                          <MaterialCommunityIcons
+                            name="check"
+                            size={16}
+                            color="#fff"
+                          />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={styles.nivelesRow}>
+                    {["PRI", "PRO", "PREMIUM"].map((n) => (
+                      <TouchableOpacity
+                        key={n}
+                        onPress={() =>
+                          updateDoc(doc(db, "users", item.id), {
+                            tipoCliente: n,
+                          })
+                        }
+                        style={[
+                          styles.nivelBtn,
+                          item.tipoCliente === n && styles.nivelBtnActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.nivelBtnText,
+                            item.tipoCliente === n && { color: "#FFF" },
+                          ]}
+                        >
+                          {n}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                 </View>
-              </View>
-            )}
+              );
+            }}
           />
         </View>
       )}
@@ -469,31 +570,11 @@ export default function AdminMasterPanel() {
         </View>
       )}
 
-      {/* MODAL WHATSAPP MASIVO */}
+      {/* MODAL WHATSAPP */}
       <Modal visible={modalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Confirmaciones de Mañana</Text>
-            <View style={styles.bulkActions}>
-              <TouchableOpacity
-                onPress={() =>
-                  setCitasManana(
-                    citasManana.map((c) => ({ ...c, seleccionado: true })),
-                  )
-                }
-              >
-                <Text style={styles.actionLink}>Seleccionar Todos</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() =>
-                  setCitasManana(
-                    citasManana.map((c) => ({ ...c, seleccionado: false })),
-                  )
-                }
-              >
-                <Text style={styles.actionLink}>Deseleccionar</Text>
-              </TouchableOpacity>
-            </View>
             <FlatList
               data={citasManana}
               keyExtractor={(item) => item.id}
@@ -646,6 +727,45 @@ const styles = StyleSheet.create({
   },
   cardHeader: { flexDirection: "row", justifyContent: "space-between" },
   clienteName: { fontWeight: "bold", fontSize: 16 },
+  millasRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#F8F9FA",
+    padding: 10,
+    borderRadius: 10,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: "#EEE",
+  },
+  millasInfo: { flexDirection: "row", alignItems: "center" },
+  millasLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#444",
+    marginLeft: 5,
+    marginRight: 5,
+  },
+  millasValor: { fontSize: 16, fontWeight: "bold", color: COLORS.darkGreen },
+  millasControls: { flexDirection: "row", alignItems: "center" },
+  btnMillaMini: {
+    backgroundColor: "#666",
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 5,
+  },
+  btnGuardarMillas: {
+    backgroundColor: COLORS.primaryGreen,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 10,
+  },
   nivelesRow: { flexDirection: "row", marginTop: 10 },
   nivelBtn: {
     flex: 1,
@@ -657,7 +777,7 @@ const styles = StyleSheet.create({
   },
   nivelBtnActive: { backgroundColor: COLORS.darkGreen },
   nivelBtnText: { fontSize: 9, color: "#999", fontWeight: "bold" },
-  badge: { paddingHorizontal: 8, borderRadius: 5 },
+  badge: { paddingHorizontal: 8, borderRadius: 5, justifyContent: "center" },
   badgeText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
   footerAccion: {
     position: "absolute",
@@ -720,16 +840,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginBottom: 15,
     textAlign: "center",
-  },
-  bulkActions: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    marginBottom: 15,
-  },
-  actionLink: {
-    color: COLORS.primaryGreen,
-    fontWeight: "bold",
-    textDecorationLine: "underline",
   },
   waItem: {
     flexDirection: "row",
