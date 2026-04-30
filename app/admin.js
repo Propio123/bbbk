@@ -1,27 +1,31 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { signOut } from "firebase/auth";
 import {
   collection,
   doc,
+  getDocs,
+  increment,
   onSnapshot,
   query,
   updateDoc,
-  where
+  where,
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Linking,
   Modal,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
-import { db } from "../src/api/firebase.config";
+import { auth, db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
 
 export default function AdminMasterPanel() {
@@ -50,7 +54,7 @@ export default function AdminMasterPanel() {
   const [modalWA, setModalWA] = useState(false);
   const [citasManana, setCitasManana] = useState([]);
 
-  // Escuchas de Firebase
+  // 1. Listeners de Firebase
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "especialidades"), (snap) => {
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -61,73 +65,96 @@ export default function AdminMasterPanel() {
   }, []);
 
   useEffect(() => {
-    if (vistaActual === "agenda" && medicoSel) {
-      const q = query(collection(db, "citas"), where("fecha", "==", fechaSel));
-      return onSnapshot(q, (snap) =>
-        setCitas(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      );
-    }
-    if (vistaActual === "clientes") {
-      return onSnapshot(collection(db, "users"), (snap) =>
-        setClientes(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      );
-    }
-  }, [fechaSel, medicoSel, vistaActual]);
+    const q =
+      vistaActual === "agenda"
+        ? query(collection(db, "citas"), where("fecha", "==", fechaSel))
+        : query(collection(db, "users"));
 
-  // --- LÓGICA DE VALIDACIÓN DE HORARIOS ---
-  const guardarCambioMedico = async () => {
-    if (!nuevoMedicoParaCita || nuevoMedicoParaCita === citaEnEdicion.medico) {
-      setCitaEnEdicion(null);
-      return;
-    }
+    return onSnapshot(q, (snap) => {
+      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      vistaActual === "agenda" ? setCitas(data) : setClientes(data);
+    });
+  }, [fechaSel, vistaActual]);
 
-    // Verificar si el médico destino está ocupado en esa hora
-    const ocupado = citas.find(
-      (c) =>
-        c.medico === nuevoMedicoParaCita &&
-        c.hora === citaEnEdicion.hora &&
-        c.id !== citaEnEdicion.id &&
-        c.estado !== "finalizado",
-    );
-
-    if (ocupado) {
-      Alert.alert(
-        "Error",
-        `El ${nuevoMedicoParaCita} ya tiene una cita a las ${citaEnEdicion.hora}`,
-      );
-      return;
-    }
-
+  // 2. WhatsApp Masivo
+  const prepararWA = async () => {
+    const manana = new Date();
+    manana.setDate(manana.getDate() + 1);
+    const fechaM = manana.toISOString().split("T")[0];
+    setLoading(true);
     try {
-      setLoading(true);
-      await updateDoc(doc(db, "citas", citaEnEdicion.id), {
-        medico: nuevoMedicoParaCita,
-      });
-      setCitaEnEdicion(null);
-      Alert.alert("Éxito", "Médico asignado correctamente");
+      const q = query(
+        collection(db, "citas"),
+        where("fecha", "==", fechaM),
+        where("estado", "==", "aprobado"),
+      );
+      const snap = await getDocs(q);
+      const data = snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+        seleccionado: true,
+      }));
+      setCitasManana(data);
+      if (data.length === 0) Alert.alert("Aviso", "No hay citas para mañana.");
+      else setModalWA(true);
     } catch (e) {
-      Alert.alert("Error", "No se pudo actualizar la cita");
+      Alert.alert("Error", "Error al consultar citas.");
     } finally {
       setLoading(false);
     }
   };
 
-  const finalizarCita = async (id) => {
-    Alert.alert("Finalizar", "¿Desea marcar esta cita como completada?", [
+  const enviarMasivo = async () => {
+    const seleccionados = citasManana.filter((c) => c.seleccionado);
+    for (const c of seleccionados) {
+      let tel = (c.telefonoPaciente || "").replace(/\D/g, "");
+      if (tel.startsWith("0")) tel = "593" + tel.substring(1);
+      const msg = `Hola ${c.nombrePaciente}, confirmamos su cita de ${c.especialidad || "Odontología"} para mañana a las ${c.hora}. ¿Nos confirma su asistencia?`;
+      await Linking.openURL(
+        `https://api.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent(msg)}`,
+      );
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    setModalWA(false);
+  };
+
+  // 3. Lógica de Edición y Cierre
+  const cerrarSesion = () => {
+    Alert.alert("Cerrar Sesión", "¿Está seguro?", [
       { text: "No" },
       {
         text: "Sí",
-        onPress: async () => {
-          setLoading(true);
-          await updateDoc(doc(db, "citas", id), { estado: "finalizado" });
-          setCitaEnEdicion(null);
-          setLoading(false);
-        },
+        onPress: () => signOut(auth).then(() => router.replace("/login")),
       },
     ]);
   };
 
-  // --- GRID Y MAPEO ---
+  const guardarCambioMedico = async () => {
+    if (!nuevoMedicoParaCita || nuevoMedicoParaCita === citaEnEdicion.medico) {
+      setCitaEnEdicion(null);
+      return;
+    }
+    const ocupado = citas.find(
+      (c) =>
+        c.medico === nuevoMedicoParaCita &&
+        c.hora === citaEnEdicion.hora &&
+        c.estado !== "finalizado",
+    );
+    if (ocupado)
+      return Alert.alert(
+        "Error",
+        `El Dr. ${nuevoMedicoParaCita} ya está ocupado a las ${citaEnEdicion.hora}`,
+      );
+
+    setLoading(true);
+    await updateDoc(doc(db, "citas", citaEnEdicion.id), {
+      medico: nuevoMedicoParaCita,
+    });
+    setCitaEnEdicion(null);
+    setLoading(false);
+  };
+
+  // 4. Mapeo de Grid
   const agendaMap = useMemo(() => {
     const map = {};
     citas
@@ -158,11 +185,20 @@ export default function AdminMasterPanel() {
 
   return (
     <View style={styles.container}>
-      {/* Header y Tabs (Omitidos por brevedad pero se mantienen iguales) */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
+          <TouchableOpacity onPress={cerrarSesion}>
+            <MaterialCommunityIcons name="logout" size={24} color="#fff" />
+          </TouchableOpacity>
           <Text style={styles.headerTitle}>333K Master Panel</Text>
           <View style={{ flexDirection: "row" }}>
+            <TouchableOpacity onPress={prepararWA} style={styles.iconBtn}>
+              <MaterialCommunityIcons
+                name="whatsapp"
+                size={26}
+                color="#25D366"
+              />
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setModalMedicos(true)}
               style={styles.iconBtn}
@@ -185,6 +221,7 @@ export default function AdminMasterPanel() {
             </TouchableOpacity>
           </View>
         </View>
+
         {vistaActual === "agenda" && (
           <ScrollView
             horizontal
@@ -204,7 +241,6 @@ export default function AdminMasterPanel() {
         )}
       </View>
 
-      {/* GRID DE AGENDA DINÁMICO */}
       {vistaActual === "agenda" ? (
         <ScrollView contentContainerStyle={styles.grid}>
           {HORARIOS.map((h) => {
@@ -237,49 +273,64 @@ export default function AdminMasterPanel() {
           })}
         </ScrollView>
       ) : (
-        /* Vista de Clientes con Millas Digitalizables */
-        <View style={{ flex: 1, padding: 10 }}>
+        <View style={{ flex: 1, padding: 15 }}>
           <TextInput
-            placeholder="Buscar..."
+            placeholder="Buscar cliente..."
             style={styles.searchBar}
             onChangeText={setBusqueda}
           />
           <FlatList
             data={clientes.filter((c) =>
-              (c.nombre || "").toLowerCase().includes(busqueda.toLowerCase()),
+              (c.nombre || c.displayName || "")
+                .toLowerCase()
+                .includes(busqueda.toLowerCase()),
             )}
+            keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <View style={styles.clienteCard}>
-                <Text style={{ fontWeight: "bold" }}>
-                  {item.nombre || item.displayName}
+                <Text style={{ fontWeight: "bold", flex: 1 }}>
+                  {item.nombre || item.displayName || "Paciente"}
                 </Text>
-                <TextInput
-                  style={styles.millasInput}
-                  keyboardType="numeric"
-                  defaultValue={String(item.puntosSalud || 0)}
-                  onEndEditing={(e) =>
-                    updateDoc(doc(db, "users", item.id), {
-                      puntosSalud: Number(e.nativeEvent.text),
-                    })
-                  }
-                />
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text style={{ fontSize: 10, color: "#666", marginRight: 5 }}>
+                    Millas:
+                  </Text>
+                  <TextInput
+                    style={styles.millasInput}
+                    keyboardType="numeric"
+                    defaultValue={String(item.puntosSalud || 0)}
+                    onEndEditing={(e) =>
+                      updateDoc(doc(db, "users", item.id), {
+                        puntosSalud: Number(e.nativeEvent.text),
+                      })
+                    }
+                  />
+                  <TouchableOpacity
+                    onPress={() =>
+                      updateDoc(doc(db, "users", item.id), {
+                        puntosSalud: increment(10),
+                      })
+                    }
+                    style={styles.btnSmall}
+                  >
+                    <Text style={styles.btnText}>+10</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
           />
         </View>
       )}
 
-      {/* PANEL DE EDICIÓN DE CITA (Grid) */}
+      {/* PANEL EDICIÓN DE CITA (Grid) */}
       {citaEnEdicion && (
         <View style={styles.editPanel}>
           <Text style={styles.editPanelTitle}>
-            Editar Cita: {citaEnEdicion.nombrePaciente}
+            Paciente: {citaEnEdicion.nombrePaciente}
           </Text>
-          <Text style={{ fontSize: 12, marginBottom: 10 }}>
-            Hora: {citaEnEdicion.hora}
+          <Text style={styles.label}>
+            Reasignar médico para las {citaEnEdicion.hora}:
           </Text>
-
-          <Text style={styles.label}>Cambiar de Médico:</Text>
           <ScrollView horizontal style={{ marginBottom: 15 }}>
             {listaMedicos.map((m) => (
               <TouchableOpacity
@@ -294,63 +345,113 @@ export default function AdminMasterPanel() {
               </TouchableOpacity>
             ))}
           </ScrollView>
-
-          <View
-            style={{ flexDirection: "row", justifyContent: "space-between" }}
-          >
+          <View style={{ flexDirection: "row" }}>
             <TouchableOpacity
               onPress={guardarCambioMedico}
               style={styles.btnSave}
             >
-              <Text style={{ color: "#fff" }}>Guardar Cambio</Text>
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>GUARDAR</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => finalizarCita(citaEnEdicion.id)}
+              onPress={() => {
+                updateDoc(doc(db, "citas", citaEnEdicion.id), {
+                  estado: "finalizado",
+                });
+                setCitaEnEdicion(null);
+              }}
               style={styles.btnDone}
             >
-              <Text style={{ color: "#fff" }}>Finalizar Cita</Text>
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                FINALIZAR
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setCitaEnEdicion(null)}
               style={styles.btnCancel}
             >
-              <Text>Cerrar</Text>
+              <Text>CERRAR</Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
 
-      {/* MODAL ESPECIALIDADES EDITABLES */}
-      <Modal visible={modalMedicos} transparent animationType="slide">
+      {/* MODAL WHATSAPP */}
+      <Modal visible={modalWA} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Gestionar Especialistas</Text>
+            <Text style={styles.modalTitle}>Citas para Mañana</Text>
             <FlatList
-              data={listaMedicos}
-              keyExtractor={(item) => item.id}
+              data={citasManana}
               renderItem={({ item }) => (
-                <View style={{ marginBottom: 15 }}>
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      color: COLORS.primaryGreen,
-                      fontWeight: "bold",
-                    }}
-                  >
-                    {item.nombre}
-                  </Text>
-                  <TextInput
-                    style={styles.inputEdit}
-                    defaultValue={item.medico}
-                    onEndEditing={(e) =>
-                      updateDoc(doc(db, "especialidades", item.id), {
-                        medico: e.nativeEvent.text,
-                      })
+                <TouchableOpacity
+                  onPress={() =>
+                    setCitasManana(
+                      citasManana.map((x) =>
+                        x.id === item.id
+                          ? { ...x, seleccionado: !x.seleccionado }
+                          : x,
+                      ),
+                    )
+                  }
+                  style={styles.waItem}
+                >
+                  <MaterialCommunityIcons
+                    name={
+                      item.seleccionado
+                        ? "checkbox-marked"
+                        : "checkbox-blank-outline"
                     }
+                    size={24}
+                    color={COLORS.primaryGreen}
                   />
-                </View>
+                  <Text style={{ marginLeft: 10 }}>
+                    {item.hora} - {item.nombrePaciente}
+                  </Text>
+                </TouchableOpacity>
               )}
             />
+            <TouchableOpacity onPress={enviarMasivo} style={styles.btnPrimario}>
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                ENVIAR WHATSAPP
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setModalWA(false)}
+              style={styles.btnSecundario}
+            >
+              <Text>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL MÉDICOS EDITABLES */}
+      <Modal visible={modalMedicos} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Especialidades y Doctores</Text>
+            {listaMedicos.map((m) => (
+              <View key={m.id} style={{ marginBottom: 10 }}>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    color: COLORS.primaryGreen,
+                    fontWeight: "bold",
+                  }}
+                >
+                  {m.nombre}
+                </Text>
+                <TextInput
+                  style={styles.inputEdit}
+                  defaultValue={m.medico}
+                  onEndEditing={(e) =>
+                    updateDoc(doc(db, "especialidades", m.id), {
+                      medico: e.nativeEvent.text,
+                    })
+                  }
+                />
+              </View>
+            ))}
             <TouchableOpacity
               onPress={() => setModalMedicos(false)}
               style={styles.btnClose}
@@ -386,7 +487,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  headerTitle: { color: "#fff", fontSize: 18, fontWeight: "bold" },
+  headerTitle: { color: "#fff", fontSize: 16, fontWeight: "bold" },
   iconBtn: { marginLeft: 15 },
   tab: {
     paddingVertical: 8,
@@ -402,7 +503,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    paddingBottom: 100,
+    paddingBottom: 120,
   },
   slot: {
     width: "23%",
@@ -423,6 +524,36 @@ const styles = StyleSheet.create({
     color: "#333",
   },
   bgRojo: { backgroundColor: "#FF5252" },
+  searchBar: {
+    backgroundColor: "#fff",
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 15,
+  },
+  clienteCard: {
+    backgroundColor: "#fff",
+    padding: 12,
+    borderRadius: 15,
+    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  millasInput: {
+    backgroundColor: "#F0F0F0",
+    width: 55,
+    textAlign: "center",
+    borderRadius: 8,
+    padding: 5,
+    fontWeight: "bold",
+    color: COLORS.darkGreen,
+  },
+  btnSmall: {
+    backgroundColor: COLORS.primaryGreen,
+    padding: 6,
+    borderRadius: 8,
+    marginLeft: 5,
+  },
+  btnText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
   editPanel: {
     position: "absolute",
     bottom: 0,
@@ -434,10 +565,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 30,
     elevation: 20,
   },
-  editPanelTitle: { fontWeight: "bold", fontSize: 16, marginBottom: 5 },
-  label: { fontSize: 12, color: "#666", marginBottom: 5 },
+  editPanelTitle: { fontWeight: "bold", fontSize: 15, marginBottom: 10 },
   miniTab: {
-    padding: 8,
+    padding: 10,
     backgroundColor: "#EEE",
     borderRadius: 10,
     marginRight: 5,
@@ -445,7 +575,7 @@ const styles = StyleSheet.create({
   btnSave: {
     backgroundColor: COLORS.primaryGreen,
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     flex: 1,
     marginRight: 5,
     alignItems: "center",
@@ -453,7 +583,7 @@ const styles = StyleSheet.create({
   btnDone: {
     backgroundColor: "#2196F3",
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     flex: 1,
     marginRight: 5,
     alignItems: "center",
@@ -461,7 +591,7 @@ const styles = StyleSheet.create({
   btnCancel: {
     backgroundColor: "#F0F0F0",
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: "center",
   },
   modalOverlay: {
@@ -470,13 +600,23 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 20,
   },
-  modalContent: {
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 25,
-    maxHeight: "70%",
+  modalContent: { backgroundColor: "#fff", padding: 20, borderRadius: 25 },
+  modalTitle: { fontWeight: "bold", textAlign: "center", marginBottom: 15 },
+  waItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderBottomWidth: 1,
+    borderColor: "#EEE",
   },
-  modalTitle: { fontWeight: "bold", textAlign: "center", marginBottom: 20 },
+  btnPrimario: {
+    backgroundColor: "#25D366",
+    padding: 15,
+    borderRadius: 15,
+    alignItems: "center",
+    marginTop: 15,
+  },
+  btnSecundario: { padding: 10, alignItems: "center" },
   inputEdit: { borderBottomWidth: 1, borderColor: "#DDD", paddingVertical: 5 },
   btnClose: {
     backgroundColor: COLORS.darkGreen,
@@ -486,27 +626,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   loader: { position: "absolute", top: "50%", alignSelf: "center" },
-  clienteCard: {
-    backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 15,
-    marginBottom: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  millasInput: {
-    backgroundColor: "#F0F0F0",
-    width: 60,
-    textAlign: "center",
-    borderRadius: 8,
-    padding: 5,
-    fontWeight: "bold",
-  },
-  searchBar: {
-    backgroundColor: "#fff",
-    padding: 10,
-    borderRadius: 10,
-    marginBottom: 10,
-  },
 });
