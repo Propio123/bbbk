@@ -12,8 +12,8 @@ import {
 } from "react-native";
 
 import { ScreenWrapper } from ".././components/ScreenWrapper";
-import { COLORS } from ".././constants/theme";
 import { auth, db } from "../src/api/firebase.config";
+import { COLORS } from "../src/constants/theme";
 
 const BENEFICIOS_DATA = [
   {
