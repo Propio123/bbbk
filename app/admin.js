@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Modal,
@@ -38,7 +39,7 @@ export default function AdminMasterPanel() {
     new Date().toISOString().split("T")[0],
   );
   const [especialidades, setEspecialidades] = useState([]);
-  const [medicoSel, setMedicoSel] = useState(null);
+  const [medicoSel, setMedicoSel] = useState(null); // Aquí guardaremos el nombre del médico/especialidad
   const [citas, setCitas] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [busqueda, setBusqueda] = useState("");
@@ -57,30 +58,45 @@ export default function AdminMasterPanel() {
   const [modalVisible, setModalVisible] = useState(false);
   const [citasManana, setCitasManana] = useState([]);
 
-  // 1. CARGA DE ESPECIALIDADES
+  // 1. CARGA DE ESPECIALIDADES / MÉDICOS
+  // IMPORTANTE: Lo que agregues aquí debe ser el nombre del MÉDICO si así está en las citas
   useEffect(() => {
     const unsubEsp = onSnapshot(
       query(collection(db, "especialidades"), orderBy("nombre")),
       (snap) => {
         const lista = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setEspecialidades(lista);
-        if (lista.length > 0 && !medicoSel) setMedicoSel(lista[0].nombre);
+        // Solo inicializamos si no hay nada seleccionado
+        if (lista.length > 0 && !medicoSel) {
+          setMedicoSel(lista[0].nombre);
+        }
       },
     );
     return () => unsubEsp();
   }, []);
 
-  // 2. CARGA DE CITAS
+  // 2. CARGA DE CITAS (Filtrado estricto por nombre de médico)
   useEffect(() => {
     if (vistaActual !== "agenda" || !medicoSel) return;
+
+    // Filtramos donde el campo 'medico' coincida con el nombre de la 'especialidad' seleccionada
     const q = query(
       collection(db, "citas"),
       where("fecha", "==", fechaSel),
       where("medico", "==", medicoSel),
     );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setCitas(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const data = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setCitas(data);
+      },
+      (error) => {
+        console.error("Error cargando citas:", error);
+      },
+    );
+
     return () => unsubscribe();
   }, [fechaSel, medicoSel, vistaActual]);
 
@@ -160,6 +176,7 @@ export default function AdminMasterPanel() {
   };
 
   const guardarCita = async () => {
+    if (!citaBase) return;
     setLoading(true);
     try {
       await updateDoc(doc(db, "citas", citaBase.id), {
@@ -176,18 +193,9 @@ export default function AdminMasterPanel() {
     }
   };
 
-  const actualizarMillas = async (id, cantidad) => {
-    try {
-      await updateDoc(doc(db, "users", id), {
-        puntosSalud: increment(cantidad),
-      });
-    } catch (e) {
-      Alert.alert("Error", "No se pudo actualizar puntos");
-    }
-  };
-
   const manejarEspecialidad = async () => {
     if (!nuevaEsp.trim()) return;
+    setLoading(true);
     try {
       if (editandoEsp) {
         await updateDoc(doc(db, "especialidades", editandoEsp.id), {
@@ -202,6 +210,8 @@ export default function AdminMasterPanel() {
       setNuevaEsp("");
     } catch (e) {
       Alert.alert("Error", "No se pudo procesar");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -381,13 +391,21 @@ export default function AdminMasterPanel() {
                   </Text>
                   <View style={{ flexDirection: "row" }}>
                     <TouchableOpacity
-                      onPress={() => actualizarMillas(item.id, -10)}
+                      onPress={() =>
+                        updateDoc(doc(db, "users", item.id), {
+                          puntosSalud: increment(-10),
+                        })
+                      }
                       style={styles.millaBtn}
                     >
                       <Text style={styles.millaBtnT}>-10</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      onPress={() => actualizarMillas(item.id, 10)}
+                      onPress={() =>
+                        updateDoc(doc(db, "users", item.id), {
+                          puntosSalud: increment(10),
+                        })
+                      }
                       style={styles.millaBtn}
                     >
                       <Text style={styles.millaBtnT}>+10</Text>
@@ -416,7 +434,11 @@ export default function AdminMasterPanel() {
           <View style={styles.addArea}>
             <TextInput
               style={[styles.searchBar, { flex: 1, marginBottom: 0 }]}
-              placeholder={editandoEsp ? "Editar médico..." : "Nuevo médico..."}
+              placeholder={
+                editandoEsp
+                  ? "Editar nombre..."
+                  : "Añadir Médico/Especialidad..."
+              }
               value={nuevaEsp}
               onChangeText={setNuevaEsp}
             />
@@ -424,11 +446,15 @@ export default function AdminMasterPanel() {
               onPress={manejarEspecialidad}
               style={styles.btnAdd}
             >
-              <MaterialCommunityIcons
-                name={editandoEsp ? "check" : "plus"}
-                size={24}
-                color="#fff"
-              />
+              {loading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <MaterialCommunityIcons
+                  name={editandoEsp ? "check" : "plus"}
+                  size={24}
+                  color="#fff"
+                />
+              )}
             </TouchableOpacity>
           </View>
           <FlatList
@@ -481,7 +507,7 @@ export default function AdminMasterPanel() {
       {citaBase && vistaActual === "agenda" && (
         <View style={styles.footerAccion}>
           <Text style={{ color: "#fff", fontSize: 12 }}>
-            Editando: {citaBase.nombrePaciente}
+            Mover a: {citaBase.nombrePaciente}
           </Text>
           <ScrollView horizontal style={{ marginVertical: 5 }}>
             {especialidades.map((e) => (
@@ -507,21 +533,21 @@ export default function AdminMasterPanel() {
             }}
           >
             <TouchableOpacity onPress={cancelarSeleccion} style={styles.btnCan}>
-              <Text style={styles.btnText}>SALIR</Text>
+              <Text style={styles.btnText}>CANCELAR</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={guardarCita} style={styles.btnOk}>
-              <Text style={styles.btnText}>GUARDAR</Text>
+              <Text style={styles.btnText}>CONFIRMAR</Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
 
-      {/* MODAL EDICION CLIENTE (MILLAS Y DATOS) */}
+      {/* MODAL EDICION CLIENTE */}
       <Modal visible={!!clienteEdicion} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Editar Ficha</Text>
-            <Text style={styles.label}>Nombre:</Text>
+            <Text style={styles.modalTitle}>Ficha de Paciente</Text>
+            <Text style={styles.label}>Nombre Completo:</Text>
             <TextInput
               style={styles.modalInput}
               value={
@@ -531,7 +557,7 @@ export default function AdminMasterPanel() {
                 setClienteEdicion({ ...clienteEdicion, displayName: t })
               }
             />
-            <Text style={styles.label}>Millas Acumuladas:</Text>
+            <Text style={styles.label}>Puntos / Millas:</Text>
             <TextInput
               style={styles.modalInput}
               keyboardType="numeric"
@@ -540,11 +566,11 @@ export default function AdminMasterPanel() {
                 setClienteEdicion({ ...clienteEdicion, puntosSalud: Number(t) })
               }
             />
-            <Text style={styles.label}>Fecha Nacimiento (AAAA-MM-DD):</Text>
+            <Text style={styles.label}>Fecha Nacimiento:</Text>
             <TextInput
               style={styles.modalInput}
               value={clienteEdicion?.fechaNacimiento}
-              placeholder="1990-01-01"
+              placeholder="AAAA-MM-DD"
               onChangeText={(t) =>
                 setClienteEdicion({ ...clienteEdicion, fechaNacimiento: t })
               }
@@ -561,7 +587,7 @@ export default function AdminMasterPanel() {
                 setClienteEdicion(null);
               }}
             >
-              <Text style={styles.btnText}>ACTUALIZAR</Text>
+              <Text style={styles.btnText}>GUARDAR CAMBIOS</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setClienteEdicion(null)}
