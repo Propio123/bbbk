@@ -322,7 +322,7 @@ export default function AdminMasterPanel() {
                   }}
                   style={[
                     styles.tab,
-                    medicoSel === esp.nombre && styles.tabActive,
+                    medicoSel === esp.nuevoMedico && styles.tabActive,
                   ]}
                 >
                   <Text style={styles.tabText}>{esp.nombre}</Text>
