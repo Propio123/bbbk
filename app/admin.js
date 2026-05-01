@@ -4,7 +4,6 @@ import { signOut } from "firebase/auth";
 import {
   addDoc,
   collection,
-  deleteDoc,
   doc,
   getDocs,
   increment,
@@ -534,21 +533,97 @@ export default function AdminMasterPanel() {
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <View style={styles.clienteCard}>
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Text style={{ flex: 1, fontWeight: "bold" }}>
-                    {item.nombre}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() =>
-                      deleteDoc(doc(db, "especialidades", item.id))
-                    }
-                  >
+                <TouchableOpacity
+                  onPress={() => setClienteEdicion(item)}
+                  style={styles.cardHeader}
+                >
+                  <View style={{ flex: 1 }}>
+                    {/* Corrección de nombre: Prioriza displayName, luego email, luego nombre de cita */}
+                    <Text style={styles.clienteName}>
+                      {item.displayName ||
+                        item.nombre ||
+                        item.email ||
+                        "Usuario sin nombre"}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.cardSubText,
+                        {
+                          color: item.fechaNacimiento
+                            ? COLORS.primaryGreen
+                            : "#FF9800",
+                        },
+                      ]}
+                    >
+                      {item.fechaNacimiento
+                        ? `Nacimiento: ${item.fechaNacimiento}`
+                        : "⚠️ Falta Fecha Nac."}
+                    </Text>
+                  </View>
+                  {esCumpleHoy(item.fechaNacimiento) && (
                     <MaterialCommunityIcons
-                      name="trash-can-outline"
+                      name="cake-variant"
                       size={24}
-                      color="#FF5252"
+                      color="#E91E63"
+                      style={{ marginRight: 10 }}
                     />
-                  </TouchableOpacity>
+                  )}
+                  <View
+                    style={[
+                      styles.badge,
+                      {
+                        backgroundColor:
+                          item.tipoCliente === "PREMIUM"
+                            ? "#D4AF37"
+                            : item.tipoCliente === "PRO"
+                              ? "#C0C0C0"
+                              : "#CD7F32",
+                      },
+                    ]}
+                  >
+                    <Text style={styles.badgeText}>
+                      {item.tipoCliente || "PRI"}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                {/* SECCIÓN MILLAS CON INPUT MANUAL E INCREMENTO DE 10 */}
+                <View style={styles.millasContainer}>
+                  <Text style={styles.millasLabel}>Puntos de Salud:</Text>
+                  <View style={styles.millasActions}>
+                    <TouchableOpacity
+                      style={styles.millasBtnMinus}
+                      onPress={() => ajustarMillas(item.id, -10)} // Incremento de 10 en 10
+                    >
+                      <MaterialCommunityIcons
+                        name="minus"
+                        size={18}
+                        color="#FFF"
+                      />
+                    </TouchableOpacity>
+
+                    <View style={styles.millasDisplay}>
+                      <TextInput
+                        style={styles.millasInput}
+                        keyboardType="numeric"
+                        defaultValue={(item.puntosSalud || 0).toString()}
+                        onEndEditing={(e) =>
+                          actualizarMillasManual(item.id, e.nativeEvent.text)
+                        }
+                      />
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.millasBtnPlus}
+                      onPress={() => ajustarMillas(item.id, 10)} // Incremento de 10 en 10
+                    >
+                      <MaterialCommunityIcons
+                        name="plus"
+                        size={18}
+                        color="#FFF"
+                      />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             )}
@@ -871,7 +946,20 @@ const styles = StyleSheet.create({
     padding: 5,
     borderRadius: 5,
   },
-  millasDisplay: { paddingHorizontal: 15 },
+  millasInput: {
+    fontWeight: "bold",
+    fontSize: 16,
+    color: COLORS.darkGreen,
+    textAlign: "center",
+    minWidth: 40,
+    padding: 0, // Importante para que no se desfase en Android
+  },
+  millasDisplay: {
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#ccc",
+    marginHorizontal: 5,
+  },
   millasText: { fontWeight: "bold", fontSize: 16, color: COLORS.darkGreen },
   footerAccion: {
     position: "absolute",
