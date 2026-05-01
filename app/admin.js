@@ -106,14 +106,36 @@ export default function AdminMasterPanel() {
 
   const enviarMasivo = async () => {
     const seleccionados = citasManana.filter((c) => c.seleccionado);
+
     for (const c of seleccionados) {
       let tel = (c.telefonoPaciente || "").replace(/\D/g, "");
-      if (tel.startsWith("0")) tel = "593" + tel.substring(1);
+
+      // Ajuste de código de país para Ecuador (593)
+      if (tel.startsWith("0")) {
+        tel = "593" + tel.substring(1);
+      } else if (!tel.startsWith("593")) {
+        tel = "593" + tel;
+      }
+
       const msg = `Hola ${c.nombrePaciente}, confirmamos su cita de ${c.especialidad || "Odontología"} para mañana a las ${c.hora}. ¿Nos confirma su asistencia?`;
-      await Linking.openURL(
-        `https://api.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent(msg)}`,
-      );
-      await new Promise((r) => setTimeout(r, 1000));
+      const url = `whatsapp://send?phone=${tel}&text=${encodeURIComponent(msg)}`;
+
+      try {
+        const supported = await Linking.canOpenURL(url);
+        if (supported) {
+          await Linking.openURL(url);
+        } else {
+          // Fallback a la web si la app no está instalada
+          await Linking.openURL(
+            `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,
+          );
+        }
+      } catch (error) {
+        console.error("Error al abrir WhatsApp:", error);
+      }
+
+      // Aumentar el tiempo de espera entre envíos para evitar bloqueos del sistema
+      await new Promise((r) => setTimeout(r, 2000));
     }
     setModalWA(false);
   };
