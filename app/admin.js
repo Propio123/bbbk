@@ -15,9 +15,9 @@ import {
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
+  Linking,
   Modal,
   ScrollView,
   StyleSheet,
@@ -39,77 +39,63 @@ export default function AdminMasterPanel() {
     new Date().toISOString().split("T")[0],
   );
   const [especialidades, setEspecialidades] = useState([]);
-  const [medicoSel, setMedicoSel] = useState(null); // Aquí guardaremos el nombre del médico/especialidad
+  const [medicoSel, setMedicoSel] = useState(null);
   const [citas, setCitas] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [busqueda, setBusqueda] = useState("");
 
-  // Edición de Agenda
-  const [citaBase, setCitaBase] = useState(null);
-  const [nuevoMedico, setNuevoMedico] = useState(null);
-  const [seleccionMultiple, setSeleccionMultiple] = useState([]);
-
-  // Edición Especialidades & Clientes
-  const [nuevaEsp, setNuevaEsp] = useState("");
+  // Edición Especialidades (Médico + Especialidad)
+  const [nuevoNombreMed, setNuevoNombreMed] = useState("");
+  const [nuevaAreaEsp, setNuevaAreaEsp] = useState("");
   const [editandoEsp, setEditandoEsp] = useState(null);
+
+  // Edición Agenda & Clientes
+  const [citaBase, setCitaBase] = useState(null);
+  const [nuevoMedicoCita, setNuevoMedicoCita] = useState(null);
+  const [seleccionMultiple, setSeleccionMultiple] = useState([]);
   const [clienteEdicion, setClienteEdicion] = useState(null);
 
   // WhatsApp
   const [modalVisible, setModalVisible] = useState(false);
   const [citasManana, setCitasManana] = useState([]);
 
-  // 1. CARGA DE ESPECIALIDADES / MÉDICOS
-  // IMPORTANTE: Lo que agregues aquí debe ser el nombre del MÉDICO si así está en las citas
+  // 1. CARGA DE MÉDICOS Y ESPECIALIDADES
   useEffect(() => {
     const unsubEsp = onSnapshot(
       query(collection(db, "especialidades"), orderBy("nombre")),
       (snap) => {
         const lista = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setEspecialidades(lista);
-        // Solo inicializamos si no hay nada seleccionado
-        if (lista.length > 0 && !medicoSel) {
-          setMedicoSel(lista[0].nombre);
-        }
+        if (lista.length > 0 && !medicoSel) setMedicoSel(lista[0].nombre);
       },
     );
     return () => unsubEsp();
   }, []);
 
-  // 2. CARGA DE CITAS (Filtrado estricto por nombre de médico)
+  // 2. CARGA DE CITAS
   useEffect(() => {
     if (vistaActual !== "agenda" || !medicoSel) return;
-
-    // Filtramos donde el campo 'medico' coincida con el nombre de la 'especialidad' seleccionada
     const q = query(
       collection(db, "citas"),
       where("fecha", "==", fechaSel),
       where("medico", "==", medicoSel),
     );
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const data = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setCitas(data);
-      },
-      (error) => {
-        console.error("Error cargando citas:", error);
-      },
-    );
-
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setCitas(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
     return () => unsubscribe();
   }, [fechaSel, medicoSel, vistaActual]);
 
   // 3. CARGA DE CLIENTES
   useEffect(() => {
     if (vistaActual !== "clientes") return;
-    const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
-      setClientes(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+    const unsubscribe = onSnapshot(collection(db, "users"), (snap) => {
+      setClientes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
     return () => unsubscribe();
   }, [vistaActual]);
 
-  // --- LÓGICA AUXILIAR ---
+  // --- FUNCIONES DE APOYO ---
   const esCumpleHoy = (fechaStr) => {
     if (!fechaStr || typeof fechaStr !== "string") return false;
     const hoy = new Date();
@@ -117,23 +103,48 @@ export default function AdminMasterPanel() {
     return fechaStr.endsWith(mmdd);
   };
 
-  const clientesFiltrados = useMemo(() => {
-    const term = busqueda.toLowerCase().trim();
-    return clientes.filter((c) => {
-      const nombre = (c.displayName || c.nombre || c.name || "").toLowerCase();
-      const email = (c.email || "").toLowerCase();
-      return nombre.includes(term) || email.includes(term);
-    });
-  }, [clientes, busqueda]);
+  const enviarConfirmacionWA = async (cita) => {
+    let tel = (cita.telefonoPaciente || "").replace(/\D/g, "");
+    if (tel.startsWith("0")) tel = "593" + tel.substring(1);
+    else if (!tel.startsWith("593")) tel = "593" + tel;
 
-  const HORARIOS = [];
-  for (let h = 8; h < 18; h++) {
-    for (let m = 0; m < 60; m += 15)
-      HORARIOS.push(
-        `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`,
-      );
-  }
+    const msg = `Hola ${cita.nombrePaciente}, le saluda 333K. Confirmamos su cita para el ${cita.fecha} a las ${cita.hora} con ${cita.medico}. ¿Nos confirma su asistencia?`;
+    const url = `whatsapp://send?phone=${tel}&text=${encodeURIComponent(msg)}`;
 
+    try {
+      const puedeAbrir = await Linking.canOpenURL(url);
+      if (puedeAbrir) await Linking.openURL(url);
+      else
+        await Linking.openURL(
+          `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,
+        );
+    } catch (e) {
+      Alert.alert("Error", "No se pudo abrir WhatsApp");
+    }
+  };
+
+  const manejarEspecialidad = async () => {
+    if (!nuevoNombreMed.trim())
+      return Alert.alert("Error", "El nombre del médico es obligatorio");
+    setLoading(true);
+    try {
+      const data = { nombre: nuevoNombreMed.trim(), area: nuevaAreaEsp.trim() };
+      if (editandoEsp) {
+        await updateDoc(doc(db, "especialidades", editandoEsp.id), data);
+        setEditandoEsp(null);
+      } else {
+        await addDoc(collection(db, "especialidades"), data);
+      }
+      setNuevoNombreMed("");
+      setNuevaAreaEsp("");
+    } catch (e) {
+      Alert.alert("Error", "Fallo al guardar");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- RENDERIZADO ---
   const agendaMap = useMemo(() => {
     const map = {};
     citas.forEach((cita) => {
@@ -153,71 +164,17 @@ export default function AdminMasterPanel() {
     return map;
   }, [citas]);
 
-  // --- ACCIONES ---
-  const cancelarSeleccion = () => {
-    setCitaBase(null);
-    setSeleccionMultiple([]);
-    setNuevoMedico(null);
-  };
-
-  const manejarToqueSlot = (hora, info) => {
-    if (citaBase) {
-      if (info && info.id !== citaBase.id) return;
-      setSeleccionMultiple((prev) =>
-        prev.includes(hora)
-          ? prev.filter((h) => h !== hora)
-          : [...prev, hora].sort(),
+  const HORARIOS = [];
+  for (let h = 8; h < 18; h++) {
+    for (let m = 0; m < 60; m += 15)
+      HORARIOS.push(
+        `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`,
       );
-    } else if (info) {
-      setCitaBase(info);
-      setNuevoMedico(info.medico);
-      setSeleccionMultiple([info.hora]);
-    }
-  };
-
-  const guardarCita = async () => {
-    if (!citaBase) return;
-    setLoading(true);
-    try {
-      await updateDoc(doc(db, "citas", citaBase.id), {
-        duracion: seleccionMultiple.length * 15,
-        hora: seleccionMultiple[0],
-        medico: nuevoMedico || citaBase.medico,
-        estado: "aprobado",
-      });
-      cancelarSeleccion();
-    } catch (e) {
-      Alert.alert("Error", e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const manejarEspecialidad = async () => {
-    if (!nuevaEsp.trim()) return;
-    setLoading(true);
-    try {
-      if (editandoEsp) {
-        await updateDoc(doc(db, "especialidades", editandoEsp.id), {
-          nombre: nuevaEsp.trim(),
-        });
-        setEditandoEsp(null);
-      } else {
-        await addDoc(collection(db, "especialidades"), {
-          nombre: nuevaEsp.trim(),
-        });
-      }
-      setNuevaEsp("");
-    } catch (e) {
-      Alert.alert("Error", "No se pudo procesar");
-    } finally {
-      setLoading(false);
-    }
-  };
+  }
 
   return (
     <View style={styles.container}>
-      {/* HEADER */}
+      {/* HEADER DINÁMICO */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <Text style={styles.headerTitle}>333K Master</Text>
@@ -228,7 +185,7 @@ export default function AdminMasterPanel() {
             >
               <MaterialCommunityIcons
                 name="whatsapp"
-                size={28}
+                size={26}
                 color="#25D366"
               />
             </TouchableOpacity>
@@ -238,26 +195,25 @@ export default function AdminMasterPanel() {
                 else if (vistaActual === "clientes")
                   setVistaActual("especialidades");
                 else setVistaActual("agenda");
-                cancelarSeleccion();
               }}
               style={styles.iconBtn}
             >
               <MaterialCommunityIcons
                 name={
                   vistaActual === "agenda"
-                    ? "account-group"
+                    ? "account-heart"
                     : vistaActual === "clientes"
-                      ? "medical-bag"
-                      : "calendar"
+                      ? "stethoscope"
+                      : "calendar-clock"
                 }
-                size={28}
+                size={26}
                 color="#fff"
               />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => signOut(auth).then(() => router.replace("/login"))}
             >
-              <MaterialCommunityIcons name="power" size={26} color="#fff" />
+              <MaterialCommunityIcons name="logout" size={24} color="#fff" />
             </TouchableOpacity>
           </View>
         </View>
@@ -268,16 +224,16 @@ export default function AdminMasterPanel() {
               {especialidades.map((e) => (
                 <TouchableOpacity
                   key={e.id}
-                  onPress={() => {
-                    setMedicoSel(e.nombre);
-                    cancelarSeleccion();
-                  }}
+                  onPress={() => setMedicoSel(e.nombre)}
                   style={[
                     styles.tab,
                     medicoSel === e.nombre && styles.tabActive,
                   ]}
                 >
                   <Text style={styles.tabText}>{e.nombre}</Text>
+                  {e.area ? (
+                    <Text style={styles.tabSubText}>{e.area}</Text>
+                  ) : null}
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -314,7 +270,7 @@ export default function AdminMasterPanel() {
         )}
       </View>
 
-      {/* VISTAS */}
+      {/* CONTENIDO SEGÚN VISTA */}
       {vistaActual === "agenda" ? (
         <ScrollView contentContainerStyle={styles.grid}>
           {HORARIOS.map((h) => {
@@ -323,12 +279,22 @@ export default function AdminMasterPanel() {
             return (
               <TouchableOpacity
                 key={h}
-                onPress={() => manejarToqueSlot(h, info)}
+                onPress={() => {
+                  if (citaBase) {
+                    setSeleccionMultiple((prev) =>
+                      prev.includes(h)
+                        ? prev.filter((x) => x !== h)
+                        : [...prev, h].sort(),
+                    );
+                  } else if (info) {
+                    setCitaBase(info);
+                    setNuevoMedicoCita(info.medico);
+                    setSeleccionMultiple([info.hora]);
+                  }
+                }}
                 style={[
                   styles.slot,
-                  info?.estado === "pendiente" && styles.bgAmarillo,
                   info?.estado === "aprobado" && styles.bgRojo,
-                  info?.estado === "finalizada" && styles.bgGris,
                   estaSel && styles.bgSeleccion,
                   info?.esContinuacion && { borderTopWidth: 0 },
                 ]}
@@ -342,9 +308,21 @@ export default function AdminMasterPanel() {
                   {h}
                 </Text>
                 {info?.esInicio && (
-                  <Text style={styles.pacienteTag} numberOfLines={1}>
-                    {info.nombrePaciente}
-                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <Text style={styles.pacienteTag}>
+                      {info.nombrePaciente}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => enviarConfirmacionWA(info)}
+                    >
+                      <MaterialCommunityIcons
+                        name="whatsapp"
+                        size={12}
+                        color="#25D366"
+                        style={{ marginLeft: 4 }}
+                      />
+                    </TouchableOpacity>
+                  </View>
                 )}
               </TouchableOpacity>
             );
@@ -354,52 +332,41 @@ export default function AdminMasterPanel() {
         <View style={styles.subContainer}>
           <TextInput
             style={styles.searchBar}
-            placeholder="Buscar paciente..."
+            placeholder="Buscar por nombre..."
             value={busqueda}
             onChangeText={setBusqueda}
           />
           <FlatList
-            data={clientesFiltrados}
+            data={clientes.filter((c) =>
+              (c.displayName || "")
+                .toLowerCase()
+                .includes(busqueda.toLowerCase()),
+            )}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <View style={styles.clienteCard}>
-                <View style={styles.cardHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.clienteName}>
-                      {item.displayName ||
-                        item.nombre ||
-                        item.name ||
-                        "Sin nombre"}
-                    </Text>
-                    <Text style={styles.cardSubText}>{item.email}</Text>
-                  </View>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Text style={styles.clienteName}>
+                    {item.displayName || "Usuario"}
+                  </Text>
                   {esCumpleHoy(item.fechaNacimiento) && (
                     <MaterialCommunityIcons
-                      name="cake"
-                      size={20}
+                      name="cake-variant"
+                      size={22}
                       color="#E91E63"
                     />
                   )}
                 </View>
-
                 <View style={styles.millasRow}>
                   <Text style={styles.millasText}>
-                    Millas:{" "}
-                    <Text style={{ color: COLORS.primaryGreen }}>
-                      {item.puntosSalud || 0}
-                    </Text>
+                    Millas: {item.puntosSalud || 0}
                   </Text>
                   <View style={{ flexDirection: "row" }}>
-                    <TouchableOpacity
-                      onPress={() =>
-                        updateDoc(doc(db, "users", item.id), {
-                          puntosSalud: increment(-10),
-                        })
-                      }
-                      style={styles.millaBtn}
-                    >
-                      <Text style={styles.millaBtnT}>-10</Text>
-                    </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() =>
                         updateDoc(doc(db, "users", item.id), {
@@ -431,71 +398,67 @@ export default function AdminMasterPanel() {
         </View>
       ) : (
         <View style={styles.subContainer}>
-          <View style={styles.addArea}>
+          <View style={styles.addForm}>
             <TextInput
-              style={[styles.searchBar, { flex: 1, marginBottom: 0 }]}
-              placeholder={
-                editandoEsp
-                  ? "Editar nombre..."
-                  : "Añadir Médico/Especialidad..."
-              }
-              value={nuevaEsp}
-              onChangeText={setNuevaEsp}
+              style={styles.inputSimple}
+              placeholder="Nombre del Médico"
+              value={nuevoNombreMed}
+              onChangeText={setNuevoNombreMed}
+            />
+            <TextInput
+              style={styles.inputSimple}
+              placeholder="Especialidad (opcional)"
+              value={nuevaAreaEsp}
+              onChangeText={setNuevaAreaEsp}
             />
             <TouchableOpacity
               onPress={manejarEspecialidad}
-              style={styles.btnAdd}
+              style={styles.btnGuardarMed}
             >
-              {loading ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <MaterialCommunityIcons
-                  name={editandoEsp ? "check" : "plus"}
-                  size={24}
-                  color="#fff"
-                />
-              )}
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                {editandoEsp ? "ACTUALIZAR" : "AÑADIR MÉDICO"}
+              </Text>
             </TouchableOpacity>
           </View>
           <FlatList
             data={especialidades}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <View style={styles.clienteCard}>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
-                  <Text style={{ fontWeight: "bold" }}>{item.nombre}</Text>
-                  <View style={{ flexDirection: "row" }}>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setEditandoEsp(item);
-                        setNuevaEsp(item.nombre);
-                      }}
-                      style={{ marginRight: 15 }}
-                    >
-                      <MaterialCommunityIcons
-                        name="pencil"
-                        size={22}
-                        color="#444"
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() =>
-                        deleteDoc(doc(db, "especialidades", item.id))
-                      }
-                    >
-                      <MaterialCommunityIcons
-                        name="trash-can"
-                        size={22}
-                        color="#FF5252"
-                      />
-                    </TouchableOpacity>
-                  </View>
+              <View style={styles.medicoCard}>
+                <View>
+                  <Text style={{ fontWeight: "bold", fontSize: 16 }}>
+                    {item.nombre}
+                  </Text>
+                  <Text style={{ color: "#666" }}>
+                    {item.area || "General"}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: "row" }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setEditandoEsp(item);
+                      setNuevoNombreMed(item.nombre);
+                      setNuevaAreaEsp(item.area || "");
+                    }}
+                    style={{ marginRight: 15 }}
+                  >
+                    <MaterialCommunityIcons
+                      name="pencil"
+                      size={24}
+                      color={COLORS.primaryGreen}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() =>
+                      deleteDoc(doc(db, "especialidades", item.id))
+                    }
+                  >
+                    <MaterialCommunityIcons
+                      name="trash-can"
+                      size={24}
+                      color="#FF5252"
+                    />
+                  </TouchableOpacity>
                 </View>
               </View>
             )}
@@ -503,113 +466,120 @@ export default function AdminMasterPanel() {
         </View>
       )}
 
-      {/* FOOTER AGENDA */}
-      {citaBase && vistaActual === "agenda" && (
-        <View style={styles.footerAccion}>
-          <Text style={{ color: "#fff", fontSize: 12 }}>
-            Mover a: {citaBase.nombrePaciente}
-          </Text>
-          <ScrollView horizontal style={{ marginVertical: 5 }}>
-            {especialidades.map((e) => (
-              <TouchableOpacity
-                key={e.id}
-                onPress={() => setNuevoMedico(e.nombre)}
-                style={[
-                  styles.miniTab,
-                  (nuevoMedico === e.nombre ||
-                    (!nuevoMedico && citaBase.medico === e.nombre)) &&
-                    styles.miniTabActive,
-                ]}
-              >
-                <Text style={styles.miniTabText}>{e.nombre}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "flex-end",
-              gap: 10,
-            }}
-          >
-            <TouchableOpacity onPress={cancelarSeleccion} style={styles.btnCan}>
-              <Text style={styles.btnText}>CANCELAR</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={guardarCita} style={styles.btnOk}>
-              <Text style={styles.btnText}>CONFIRMAR</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* MODAL EDICION CLIENTE */}
-      <Modal visible={!!clienteEdicion} transparent animationType="fade">
+      {/* MODAL EDICIÓN CLIENTE */}
+      <Modal visible={!!clienteEdicion} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Ficha de Paciente</Text>
-            <Text style={styles.label}>Nombre Completo:</Text>
+            <Text style={styles.modalTitle}>Ficha Médica</Text>
             <TextInput
               style={styles.modalInput}
-              value={
-                clienteEdicion?.displayName || clienteEdicion?.nombre || ""
-              }
+              placeholder="Nombre"
+              value={clienteEdicion?.displayName}
               onChangeText={(t) =>
                 setClienteEdicion({ ...clienteEdicion, displayName: t })
               }
             />
-            <Text style={styles.label}>Puntos / Millas:</Text>
             <TextInput
               style={styles.modalInput}
+              placeholder="Millas"
               keyboardType="numeric"
               value={String(clienteEdicion?.puntosSalud || 0)}
               onChangeText={(t) =>
                 setClienteEdicion({ ...clienteEdicion, puntosSalud: Number(t) })
               }
             />
-            <Text style={styles.label}>Fecha Nacimiento:</Text>
             <TextInput
               style={styles.modalInput}
+              placeholder="Cumpleaños (AAAA-MM-DD)"
               value={clienteEdicion?.fechaNacimiento}
-              placeholder="AAAA-MM-DD"
               onChangeText={(t) =>
                 setClienteEdicion({ ...clienteEdicion, fechaNacimiento: t })
               }
             />
-
             <TouchableOpacity
-              style={styles.btnSendAll}
+              style={styles.btnAction}
               onPress={async () => {
                 await updateDoc(doc(db, "users", clienteEdicion.id), {
                   displayName: clienteEdicion.displayName,
                   puntosSalud: clienteEdicion.puntosSalud,
-                  fechaNacimiento: clienteEdicion.fechaNacimiento || "",
+                  fechaNacimiento: clienteEdicion.fechaNacimiento,
                 });
                 setClienteEdicion(null);
               }}
             >
-              <Text style={styles.btnText}>GUARDAR CAMBIOS</Text>
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                GUARDAR CAMBIOS
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setClienteEdicion(null)}
-              style={{ marginTop: 10 }}
+              style={{ marginTop: 15 }}
             >
               <Text style={{ textAlign: "center", color: "#999" }}>Cerrar</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
+      {/* FOOTER EDICIÓN AGENDA */}
+      {citaBase && (
+        <View style={styles.footerEdit}>
+          <Text style={{ color: "#fff", fontSize: 12, marginBottom: 5 }}>
+            Mover cita de: {citaBase.nombrePaciente}
+          </Text>
+          <ScrollView horizontal style={{ marginBottom: 10 }}>
+            {especialidades.map((e) => (
+              <TouchableOpacity
+                key={e.id}
+                onPress={() => setNuevoMedicoCita(e.nombre)}
+                style={[
+                  styles.miniTab,
+                  nuevoMedicoCita === e.nombre && styles.miniTabActive,
+                ]}
+              >
+                <Text style={{ color: "#fff", fontSize: 10 }}>{e.nombre}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <View
+            style={{ flexDirection: "row", justifyContent: "space-between" }}
+          >
+            <TouchableOpacity
+              onPress={() => setCitaBase(null)}
+              style={styles.btnSec}
+            >
+              <Text style={{ color: "#fff" }}>CANCELAR</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={async () => {
+                await updateDoc(doc(db, "citas", citaBase.id), {
+                  hora: seleccionMultiple[0],
+                  duracion: seleccionMultiple.length * 15,
+                  medico: nuevoMedicoCita,
+                });
+                setCitaBase(null);
+              }}
+              style={styles.btnPri}
+            >
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                CONFIRMAR
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F4F6F8" },
+  container: { flex: 1, backgroundColor: "#F8FAFC" },
   header: {
     padding: 20,
     paddingTop: 50,
     backgroundColor: COLORS.darkGreen,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
+    borderBottomLeftRadius: 25,
+    borderBottomRightRadius: 25,
   },
   headerTop: {
     flexDirection: "row",
@@ -621,12 +591,14 @@ const styles = StyleSheet.create({
   tab: {
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 15,
+    borderRadius: 12,
     backgroundColor: "rgba(255,255,255,0.1)",
     marginRight: 8,
+    alignItems: "center",
   },
   tabActive: { backgroundColor: COLORS.primaryGreen },
   tabText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
+  tabSubText: { color: "rgba(255,255,255,0.7)", fontSize: 8 },
   dateNav: {
     flexDirection: "row",
     justifyContent: "center",
@@ -639,72 +611,84 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    paddingBottom: 150,
+    paddingBottom: 120,
   },
   slot: {
     width: "23%",
     height: 45,
     backgroundColor: "#fff",
-    marginBottom: 5,
-    borderRadius: 8,
+    marginBottom: 6,
+    borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#eee",
+    borderColor: "#E2E8F0",
   },
-  slotText: { fontSize: 9, color: "#B0B5C1" },
-  pacienteTag: { fontSize: 7, color: "#333", marginTop: 2 },
-  bgAmarillo: { backgroundColor: "#FFD700" },
-  bgRojo: { backgroundColor: "#FF5252" },
-  bgGris: { backgroundColor: "#DDD" },
+  slotText: { fontSize: 9, color: "#94A3B8" },
+  pacienteTag: { fontSize: 7, color: "#1E293B", fontWeight: "bold" },
+  bgRojo: { backgroundColor: "#FEE2E2", borderColor: "#F87171" },
   bgSeleccion: {
-    backgroundColor: "#E8F5E9",
+    backgroundColor: "#DCFCE7",
     borderColor: COLORS.primaryGreen,
     borderWidth: 2,
   },
   subContainer: { flex: 1, padding: 15 },
   searchBar: {
     backgroundColor: "#fff",
-    padding: 10,
-    borderRadius: 10,
+    padding: 12,
+    borderRadius: 12,
     marginBottom: 15,
-    elevation: 2,
+    elevation: 1,
   },
   clienteCard: {
     backgroundColor: "#fff",
     padding: 15,
     borderRadius: 15,
     marginBottom: 10,
-    elevation: 3,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primaryGreen,
   },
-  clienteName: { fontWeight: "bold", fontSize: 14 },
-  cardSubText: { fontSize: 10, color: "#666" },
+  clienteName: { fontWeight: "bold", fontSize: 15 },
   millasRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: "#f0f0f0",
-    paddingTop: 10,
   },
   millaBtn: {
-    backgroundColor: "#f0f0f0",
-    padding: 5,
-    borderRadius: 5,
-    marginLeft: 5,
-    minWidth: 35,
+    backgroundColor: "#F1F5F9",
+    padding: 6,
+    borderRadius: 8,
+    marginLeft: 6,
+  },
+  addForm: {
+    backgroundColor: "#fff",
+    padding: 15,
+    borderRadius: 15,
+    marginBottom: 15,
+  },
+  inputSimple: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+  btnGuardarMed: {
+    backgroundColor: COLORS.primaryGreen,
+    padding: 12,
+    borderRadius: 10,
     alignItems: "center",
   },
-  millaBtnT: { fontSize: 10, fontWeight: "bold" },
-  addArea: { flexDirection: "row", gap: 10, marginBottom: 15 },
-  btnAdd: {
-    backgroundColor: COLORS.primaryGreen,
-    padding: 10,
-    borderRadius: 10,
-    justifyContent: "center",
+  medicoCard: {
+    backgroundColor: "#fff",
+    padding: 15,
+    borderRadius: 15,
+    marginBottom: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  footerAccion: {
+  footerEdit: {
     position: "absolute",
     bottom: 20,
     left: 20,
@@ -715,36 +699,36 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   miniTab: {
-    padding: 5,
+    padding: 6,
     backgroundColor: "rgba(255,255,255,0.1)",
     marginRight: 5,
-    borderRadius: 5,
+    borderRadius: 6,
   },
   miniTabActive: { backgroundColor: COLORS.primaryGreen },
-  miniTabText: { color: "#fff", fontSize: 9 },
-  btnOk: { backgroundColor: COLORS.primaryGreen, padding: 8, borderRadius: 10 },
-  btnCan: {
-    backgroundColor: "rgba(255,255,255,0.2)",
-    padding: 8,
+  btnPri: {
+    backgroundColor: COLORS.primaryGreen,
+    padding: 10,
     borderRadius: 10,
   },
-  btnText: { color: "#fff", fontWeight: "bold", fontSize: 11 },
+  btnSec: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    padding: 10,
+    borderRadius: 10,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
     padding: 20,
   },
-  modalContent: { backgroundColor: "#fff", padding: 20, borderRadius: 20 },
-  modalTitle: { fontWeight: "bold", fontSize: 18, marginBottom: 15 },
-  label: { fontSize: 12, color: "#666", marginBottom: 3 },
+  modalContent: { backgroundColor: "#fff", padding: 25, borderRadius: 25 },
   modalInput: {
-    backgroundColor: "#f5f5f5",
-    padding: 10,
-    borderRadius: 10,
-    marginBottom: 15,
+    backgroundColor: "#F1F5F9",
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 12,
   },
-  btnSendAll: {
+  btnAction: {
     backgroundColor: COLORS.primaryGreen,
     padding: 15,
     borderRadius: 15,
