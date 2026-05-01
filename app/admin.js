@@ -240,7 +240,7 @@ export default function AdminMasterPanel() {
           >
             <MaterialCommunityIcons name="power" size={26} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>333K Master Panel</Text>
+          <Text style={styles.headerTitle}>BBBK Master Panel</Text>
           <View style={{ flexDirection: "row" }}>
             <TouchableOpacity onPress={prepararWA} style={styles.iconBtn}>
               <MaterialCommunityIcons
@@ -316,7 +316,9 @@ export default function AdminMasterPanel() {
                   {h}
                 </Text>
                 {info?.esInicio && (
-                  <Text style={styles.pacienteTag}>{info.nombrePaciente}</Text>
+                  <Text style={{ fontWeight: "bold", flex: 1 }}>
+                    {info.nombre || info.displayName || "Paciente"}
+                  </Text>
                 )}
               </TouchableOpacity>
             );
