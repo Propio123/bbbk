@@ -198,6 +198,17 @@ export default function AdminMasterPanel() {
     }
   };
 
+  const actualizarMillasManual = async (userId, valor) => {
+    const num = parseInt(valor) || 0;
+    try {
+      await updateDoc(doc(db, "users", userId), {
+        puntosSalud: num,
+      });
+    } catch (e) {
+      console.error("Error al guardar millas manual");
+    }
+  };
+
   const prepararConfirmaciones = async () => {
     const manana = new Date();
     manana.setDate(manana.getDate() + 1);
