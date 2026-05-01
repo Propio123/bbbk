@@ -107,34 +107,63 @@ export default function AdminMasterPanel() {
   const enviarMasivo = async () => {
     const seleccionados = citasManana.filter((c) => c.seleccionado);
 
-    for (const c of seleccionados) {
+    if (seleccionados.length === 0) {
+      Alert.alert("Aviso", "No hay citas seleccionadas.");
+      return;
+    }
+
+    // Cerramos el modal para que no interfiera con la navegación
+    setModalWA(false);
+
+    // Función recursiva o secuencial para enviar uno por uno
+    for (let i = 0; i < seleccionados.length; i++) {
+      const c = seleccionados[i];
       let tel = (c.telefonoPaciente || "").replace(/\D/g, "");
 
       if (tel.startsWith("0")) {
         tel = "593" + tel.substring(1);
-      } else if (!tel.startsWith("593")) {
+      } else if (!tel.startsWith("593") && tel.length > 0) {
         tel = "593" + tel;
       }
 
       const msg = `Hola ${c.nombrePaciente}, confirmamos su cita de ${c.especialidad || "Odontología"} para mañana a las ${c.hora}. ¿Nos confirma su asistencia?`;
-      const url = `whatsapp://send?phone=${tel}&text=${encodeURIComponent(msg)}`;
 
-      try {
-        const supported = await Linking.canOpenURL(url);
-        if (supported) {
-          await Linking.openURL(url);
-        } else {
-          await Linking.openURL(
-            `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,
-          );
-        }
-      } catch (error) {
-        console.error("Error al abrir WhatsApp:", error);
-      }
+      // Intentar primero con el esquema universal para asegurar compatibilidad
+      const url = `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`;
 
-      await new Promise((r) => setTimeout(r, 2000));
+      // Mostramos una alerta para cada mensaje (esto es necesario para que el
+      // sistema operativo permita abrir múltiples URLs externas una tras otra)
+      await new Promise((resolve) => {
+        Alert.alert(
+          `Envío ${i + 1} de ${seleccionados.length}`,
+          `Enviar recordatorio a ${c.nombrePaciente}?`,
+          [
+            {
+              text: "Saltar",
+              onPress: () => resolve(true),
+              style: "cancel",
+            },
+            {
+              text: "Enviar",
+              onPress: async () => {
+                try {
+                  await Linking.openURL(url);
+                } catch (err) {
+                  Alert.alert("Error", "No se pudo abrir WhatsApp");
+                }
+                resolve(true);
+              },
+            },
+          ],
+          { cancelable: false },
+        );
+      });
+
+      // Pequeño delay para dar tiempo al sistema a registrar la acción
+      await new Promise((r) => setTimeout(r, 1000));
     }
-    setModalWA(false);
+
+    Alert.alert("Finalizado", "Se ha recorrido la lista de contactos.");
   };
 
   // 3. Lógica de Edición y Cierre
