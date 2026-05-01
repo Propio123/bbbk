@@ -132,9 +132,12 @@ export default function AdminMasterPanel() {
   }, [clientes, busqueda]);
 
   const esCumpleHoy = (fechaStr) => {
-    if (!fechaStr) return false;
+    // Verificamos que sea un string y que no esté vacío
+    if (!fechaStr || typeof fechaStr !== "string") return false;
+
     const hoy = new Date();
     const mmdd = `${(hoy.getMonth() + 1).toString().padStart(2, "0")}-${hoy.getDate().toString().padStart(2, "0")}`;
+
     return fechaStr.endsWith(mmdd);
   };
 
