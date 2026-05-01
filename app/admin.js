@@ -2,11 +2,13 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { signOut } from "firebase/auth";
 import {
+  addDoc,
   collection,
   doc,
   getDocs,
   increment,
   onSnapshot,
+  orderBy,
   query,
   serverTimestamp,
   updateDoc,
@@ -29,28 +31,16 @@ import {
 import { auth, db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
 
-const MEDICOS = [
-  "Dr. Chávez",
-  "Dra. Espinoza",
-  "Dr. Ruiz",
-  "Dra. Mora",
-  "Dr. León",
-  "Dra. Vallejo",
-  "Dr. Castillo",
-  "Dra. Paredes",
-  "Dr. Salazar",
-];
-
 export default function AdminMasterPanel() {
   const router = useRouter();
   const [vistaActual, setVistaActual] = useState("agenda");
   const [loading, setLoading] = useState(false);
 
-  // --- ESTADOS AGENDA & CLIENTES ---
   const [fechaSel, setFechaSel] = useState(
     new Date().toISOString().split("T")[0],
   );
-  const [medicoSel, setMedicoSel] = useState(MEDICOS[0]);
+  const [especialidades, setEspecialidades] = useState([]);
+  const [medicoSel, setMedicoSel] = useState(null);
   const [citas, setCitas] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [busqueda, setBusqueda] = useState("");
@@ -58,25 +48,51 @@ export default function AdminMasterPanel() {
   const [nuevoMedico, setNuevoMedico] = useState(null);
   const [seleccionMultiple, setSeleccionMultiple] = useState([]);
 
-  // --- ESTADOS WHATSAPP MODAL ---
+  const [nuevaEsp, setNuevaEsp] = useState("");
+  const [clienteEdicion, setClienteEdicion] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [citasManana, setCitasManana] = useState([]);
 
-  // 1. Escucha de Citas (Agenda)
+  // 1. Cargar Médicos / Especialidades
   useEffect(() => {
-    if (vistaActual !== "agenda") return;
+    const unsubEsp = onSnapshot(
+      query(collection(db, "especialidades"), orderBy("nombre")),
+      (snap) => {
+        const lista = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setEspecialidades(lista);
+        if (lista.length > 0 && !medicoSel) {
+          setMedicoSel(lista[0].nombre);
+        }
+      },
+    );
+    return () => unsubEsp();
+  }, []);
+
+  // 2. Escuchar Citas (Corregido para mapear exactamente por el campo correspondiente)
+  useEffect(() => {
+    if (vistaActual !== "agenda" || !medicoSel) return;
+
+    // NOTA: Asegúrate de que en Firebase las citas tengan el campo 'medico'
+    // con el mismo valor exacto que el 'nombre' de la especialidad/médico.
     const q = query(
       collection(db, "citas"),
       where("fecha", "==", fechaSel),
       where("medico", "==", medicoSel),
     );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setCitas(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        setCitas(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      },
+      (error) => {
+        console.error("Error al obtener citas: ", error);
+      },
+    );
+
     return () => unsubscribe();
   }, [fechaSel, medicoSel, vistaActual]);
 
-  // 2. Escucha de Usuarios (Clientes)
   useEffect(() => {
     if (vistaActual !== "clientes") return;
     const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
@@ -85,10 +101,10 @@ export default function AdminMasterPanel() {
     return () => unsubscribe();
   }, [vistaActual]);
 
-  // 3. Mapeo de Agenda para el Grid
   const agendaMap = useMemo(() => {
     const map = {};
     citas.forEach((cita) => {
+      if (!cita.hora) return;
       const slots = Math.ceil((cita.duracion || 15) / 15);
       let [h, m] = cita.hora.split(":").map(Number);
       for (let i = 0; i < slots; i++) {
@@ -113,10 +129,8 @@ export default function AdminMasterPanel() {
       );
   }
 
-  // 4. Buscador de Clientes Blindado
   const clientesFiltrados = useMemo(() => {
     const term = busqueda.toLowerCase().trim();
-    if (!term) return clientes;
     return clientes.filter(
       (c) =>
         (c.displayName || "").toLowerCase().includes(term) ||
@@ -124,7 +138,13 @@ export default function AdminMasterPanel() {
     );
   }, [clientes, busqueda]);
 
-  // --- LOGICA AGENDA ---
+  const esCumpleHoy = (fechaStr) => {
+    if (!fechaStr || typeof fechaStr !== "string") return false;
+    const hoy = new Date();
+    const mmdd = `${(hoy.getMonth() + 1).toString().padStart(2, "0")}-${hoy.getDate().toString().padStart(2, "0")}`;
+    return fechaStr.endsWith(mmdd);
+  };
+
   const cancelarSeleccion = () => {
     setCitaBase(null);
     setSeleccionMultiple([]);
@@ -146,26 +166,6 @@ export default function AdminMasterPanel() {
     }
   };
 
-  const finalizarCitaManual = async () => {
-    if (!citaBase?.userId)
-      return Alert.alert("Error", "Cita sin usuario vinculado");
-    setLoading(true);
-    try {
-      await updateDoc(doc(db, "users", citaBase.userId), {
-        totalCitas: increment(1),
-        puntosSalud: increment(1),
-        ultimaAtencion: serverTimestamp(),
-      });
-      await updateDoc(doc(db, "citas", citaBase.id), { estado: "finalizada" });
-      Alert.alert("Éxito", "Atención finalizada.");
-      cancelarSeleccion();
-    } catch (e) {
-      Alert.alert("Error", "No se pudo finalizar.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const guardarCambiosAgenda = async () => {
     if (!citaBase) return;
     setLoading(true);
@@ -184,7 +184,46 @@ export default function AdminMasterPanel() {
     }
   };
 
-  // --- LÓGICA WHATSAPP MASIVO ---
+  const finalizarCitaManual = async () => {
+    if (!citaBase?.userId) return Alert.alert("Error", "Sin usuario vinculado");
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, "users", citaBase.userId), {
+        totalCitas: increment(1),
+        puntosSalud: increment(1),
+        ultimaAtencion: serverTimestamp(),
+      });
+      await updateDoc(doc(db, "citas", citaBase.id), { estado: "finalizada" });
+      Alert.alert("Éxito", "Atención registrada.");
+      cancelarSeleccion();
+    } catch (e) {
+      Alert.alert("Error", "Fallo al finalizar.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const ajustarMillas = async (userId, cantidad) => {
+    try {
+      await updateDoc(doc(db, "users", userId), {
+        puntosSalud: increment(cantidad),
+      });
+    } catch (e) {
+      Alert.alert("Error", "No se pudieron actualizar las millas.");
+    }
+  };
+
+  const actualizarMillasManual = async (userId, valor) => {
+    const num = parseInt(valor) || 0;
+    try {
+      await updateDoc(doc(db, "users", userId), {
+        puntosSalud: num,
+      });
+    } catch (e) {
+      console.error("Error al guardar millas manual");
+    }
+  };
+
   const prepararConfirmaciones = async () => {
     const manana = new Date();
     manana.setDate(manana.getDate() + 1);
@@ -202,7 +241,7 @@ export default function AdminMasterPanel() {
       );
       setModalVisible(true);
     } catch (e) {
-      Alert.alert("Error", "Falta el índice en Firebase para esta consulta.");
+      Alert.alert("Error", "Consulta fallida.");
     } finally {
       setLoading(false);
     }
@@ -213,18 +252,16 @@ export default function AdminMasterPanel() {
     for (const cita of seleccionados) {
       let tel = (cita.telefonoPaciente || "").replace(/\D/g, "");
       if (tel.startsWith("0")) tel = "593" + tel.substring(1);
-      if (tel && !tel.startsWith("593")) tel = "593" + tel;
       const msg = `Hola ${cita.nombrePaciente}, confirmamos su cita para mañana a las ${cita.hora}. ¿Nos confirma su asistencia?`;
       const url = `https://api.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent(msg)}`;
       await Linking.openURL(url);
-      await new Promise((r) => setTimeout(r, 800));
+      await new Promise((r) => setTimeout(r, 1000));
     }
     setModalVisible(false);
   };
 
   return (
     <View style={styles.container}>
-      {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <Text style={styles.headerTitle}>333K Master</Text>
@@ -241,16 +278,21 @@ export default function AdminMasterPanel() {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => {
-                setVistaActual(
-                  vistaActual === "agenda" ? "clientes" : "agenda",
-                );
+                if (vistaActual === "agenda") setVistaActual("clientes");
+                else if (vistaActual === "clientes")
+                  setVistaActual("especialidades");
+                else setVistaActual("agenda");
                 cancelarSeleccion();
               }}
               style={styles.iconBtn}
             >
               <MaterialCommunityIcons
                 name={
-                  vistaActual === "agenda" ? "account-group" : "calendar-month"
+                  vistaActual === "agenda"
+                    ? "account-group"
+                    : vistaActual === "clientes"
+                      ? "briefcase-medical"
+                      : "calendar-month"
                 }
                 size={28}
                 color="#fff"
@@ -271,16 +313,19 @@ export default function AdminMasterPanel() {
               showsHorizontalScrollIndicator={false}
               style={styles.medicoScroll}
             >
-              {MEDICOS.map((m) => (
+              {especialidades.map((esp) => (
                 <TouchableOpacity
-                  key={m}
+                  key={esp.id}
                   onPress={() => {
-                    setMedicoSel(m);
+                    setMedicoSel(esp.nombre);
                     cancelarSeleccion();
                   }}
-                  style={[styles.tab, medicoSel === m && styles.tabActive]}
+                  style={[
+                    styles.tab,
+                    medicoSel === esp.nombre && styles.tabActive,
+                  ]}
                 >
-                  <Text style={styles.tabText}>{m}</Text>
+                  <Text style={styles.tabText}>{esp.nombre}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -317,7 +362,7 @@ export default function AdminMasterPanel() {
         )}
       </View>
 
-      {/* CONTENIDO PRINCIPAL */}
+      {/* Renderizado de Vistas */}
       {vistaActual === "agenda" ? (
         <ScrollView contentContainerStyle={styles.grid}>
           {HORARIOS.map((h) => {
@@ -353,7 +398,7 @@ export default function AdminMasterPanel() {
             );
           })}
         </ScrollView>
-      ) : (
+      ) : vistaActual === "clientes" ? (
         <View style={styles.clientesContainer}>
           <TextInput
             style={styles.searchBar}
@@ -366,10 +411,37 @@ export default function AdminMasterPanel() {
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <View style={styles.clienteCard}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.clienteName}>
-                    {item.displayName || "Paciente"}
-                  </Text>
+                <TouchableOpacity
+                  onPress={() => setClienteEdicion(item)}
+                  style={styles.cardHeader}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.clienteName}>
+                      {item.displayName || "Paciente"}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.cardSubText,
+                        {
+                          color: item.fechaNacimiento
+                            ? COLORS.primaryGreen
+                            : "#FF9800",
+                        },
+                      ]}
+                    >
+                      {item.fechaNacimiento
+                        ? `Nacimiento: ${item.fechaNacimiento}`
+                        : "⚠️ Falta Fecha Nac."}
+                    </Text>
+                  </View>
+                  {esCumpleHoy(item.fechaNacimiento) && (
+                    <MaterialCommunityIcons
+                      name="cake-variant"
+                      size={24}
+                      color="#E91E63"
+                      style={{ marginRight: 10 }}
+                    />
+                  )}
                   <View
                     style={[
                       styles.badge,
@@ -387,7 +459,41 @@ export default function AdminMasterPanel() {
                       {item.tipoCliente || "PRI"}
                     </Text>
                   </View>
+                </TouchableOpacity>
+
+                <View style={styles.millasContainer}>
+                  <Text style={styles.millasLabel}>Puntos de Salud:</Text>
+                  <View style={styles.millasActions}>
+                    <TouchableOpacity
+                      style={styles.millasBtnMinus}
+                      onPress={() => ajustarMillas(item.id, -1)}
+                    >
+                      <MaterialCommunityIcons
+                        name="minus"
+                        size={18}
+                        color="#FFF"
+                      />
+                    </TouchableOpacity>
+
+                    <View style={styles.millasDisplay}>
+                      <Text style={styles.millasText}>
+                        {item.puntosSalud || 0}
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.millasBtnPlus}
+                      onPress={() => ajustarMillas(item.id, 1)}
+                    >
+                      <MaterialCommunityIcons
+                        name="plus"
+                        size={18}
+                        color="#FFF"
+                      />
+                    </TouchableOpacity>
+                  </View>
                 </View>
+
                 <View style={styles.nivelesRow}>
                   {["PRI", "PRO", "PREMIUM"].map((n) => (
                     <TouchableOpacity
@@ -415,9 +521,48 @@ export default function AdminMasterPanel() {
             )}
           />
         </View>
+      ) : (
+        <View style={styles.clientesContainer}>
+          <View style={styles.addArea}>
+            <TextInput
+              placeholder="Médico o Especialidad..."
+              style={[styles.searchBar, { flex: 1, marginBottom: 0 }]}
+              value={nuevaEsp}
+              onChangeText={setNuevaEsp}
+            />
+            <TouchableOpacity
+              onPress={() => {
+                if (nuevaEsp.trim()) {
+                  addDoc(collection(db, "especialidades"), {
+                    nombre: nuevaEsp.trim(),
+                  });
+                  setNuevaEsp("");
+                }
+              }}
+              style={styles.btnAdd}
+            >
+              <MaterialCommunityIcons name="plus" size={24} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            data={especialidades}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <View style={styles.clienteCard}>
+                <View style={styles.cardHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.clienteName}>
+                      {item.nombre || "Sin nombre"}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
+          />
+        </View>
       )}
 
-      {/* FOOTER EDITOR AGENDA */}
+      {/* FOOTER ACCIÓN DE AGENDA */}
       {citaBase && vistaActual === "agenda" && (
         <View style={styles.footerAccion}>
           <Text style={styles.footerText}>
@@ -428,18 +573,18 @@ export default function AdminMasterPanel() {
             showsHorizontalScrollIndicator={false}
             style={{ marginVertical: 8 }}
           >
-            {MEDICOS.map((m) => (
+            {especialidades.map((esp) => (
               <TouchableOpacity
-                key={m}
-                onPress={() => setNuevoMedico(m)}
+                key={esp.id}
+                onPress={() => setNuevoMedico(esp.nombre)}
                 style={[
                   styles.miniTab,
-                  (nuevoMedico === m ||
-                    (!nuevoMedico && citaBase.medico === m)) &&
+                  (nuevoMedico === esp.nombre ||
+                    (!nuevoMedico && citaBase.medico === esp.nombre)) &&
                     styles.miniTabActive,
                 ]}
               >
-                <Text style={styles.miniTabText}>{m}</Text>
+                <Text style={styles.miniTabText}>{esp.nombre}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -469,7 +614,61 @@ export default function AdminMasterPanel() {
         </View>
       )}
 
-      {/* MODAL WHATSAPP MASIVO */}
+      {/* MODAL FICHA PACIENTE */}
+      <Modal visible={!!clienteEdicion} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>
+              Ficha de: {clienteEdicion?.displayName}
+            </Text>
+            <Text style={styles.label}>Nombre Completo:</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={clienteEdicion?.displayName}
+              onChangeText={(t) =>
+                setClienteEdicion({ ...clienteEdicion, displayName: t })
+              }
+            />
+            <Text style={styles.label}>Fecha Nacimiento (AAAA-MM-DD):</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="1990-05-25"
+              value={clienteEdicion?.fechaNacimiento}
+              onChangeText={(t) => {
+                let val = t.replace(/\D/g, "");
+                if (val.length > 4 && val.length <= 6)
+                  val = `${val.slice(0, 4)}-${val.slice(4)}`;
+                else if (val.length > 6)
+                  val = `${val.slice(0, 4)}-${val.slice(4, 6)}-${val.slice(6, 8)}`;
+                setClienteEdicion({ ...clienteEdicion, fechaNacimiento: val });
+              }}
+              maxLength={10}
+            />
+            <TouchableOpacity
+              style={styles.btnSendAll}
+              onPress={async () => {
+                await updateDoc(doc(db, "users", clienteEdicion.id), {
+                  displayName: clienteEdicion.displayName,
+                  fechaNacimiento: clienteEdicion.fechaNacimiento || "",
+                });
+                setClienteEdicion(null);
+              }}
+            >
+              <Text style={styles.btnText}>ACTUALIZAR FICHA</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setClienteEdicion(null)}
+              style={{ marginTop: 15 }}
+            >
+              <Text style={{ textAlign: "center", color: "#999" }}>
+                Cancelar
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL WHATSAPP */}
       <Modal visible={modalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -482,7 +681,7 @@ export default function AdminMasterPanel() {
                   )
                 }
               >
-                <Text style={styles.actionLink}>Seleccionar Todos</Text>
+                <Text style={styles.actionLink}>Todos</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() =>
@@ -491,7 +690,7 @@ export default function AdminMasterPanel() {
                   )
                 }
               >
-                <Text style={styles.actionLink}>Deseleccionar</Text>
+                <Text style={styles.actionLink}>Ninguno</Text>
               </TouchableOpacity>
             </View>
             <FlatList
@@ -545,14 +744,6 @@ export default function AdminMasterPanel() {
           </View>
         </View>
       </Modal>
-
-      {loading && (
-        <ActivityIndicator
-          style={styles.loader}
-          size="large"
-          color={COLORS.primaryGreen}
-        />
-      )}
     </View>
   );
 }
@@ -637,6 +828,14 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     elevation: 2,
   },
+  addArea: { flexDirection: "row", alignItems: "center", marginBottom: 15 },
+  btnAdd: {
+    backgroundColor: COLORS.primaryGreen,
+    padding: 14,
+    borderRadius: 12,
+    marginLeft: 10,
+    elevation: 2,
+  },
   clienteCard: {
     backgroundColor: "#fff",
     padding: 15,
@@ -644,65 +843,103 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     elevation: 3,
   },
-  cardHeader: { flexDirection: "row", justifyContent: "space-between" },
-  clienteName: { fontWeight: "bold", fontSize: 16 },
-  nivelesRow: { flexDirection: "row", marginTop: 10 },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  cardSubText: { fontSize: 11, marginTop: 2 },
+  clienteName: { fontWeight: "bold", fontSize: 15 },
+  nivelesRow: {
+    flexDirection: "row",
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#f0f0f0",
+    paddingTop: 10,
+  },
   nivelBtn: {
     flex: 1,
-    padding: 8,
+    padding: 6,
     alignItems: "center",
     backgroundColor: "#F0F0F0",
     borderRadius: 8,
     marginHorizontal: 2,
   },
   nivelBtnActive: { backgroundColor: COLORS.darkGreen },
-  nivelBtnText: { fontSize: 9, color: "#999", fontWeight: "bold" },
-  badge: { paddingHorizontal: 8, borderRadius: 5 },
-  badgeText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
+  nivelBtnText: { fontSize: 8, color: "#999", fontWeight: "bold" },
+  badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 5 },
+  badgeText: { color: "#fff", fontSize: 9, fontWeight: "bold" },
+  millasContainer: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#f8f9fa",
+    padding: 8,
+    borderRadius: 10,
+  },
+  millasLabel: { fontSize: 12, fontWeight: "bold", color: "#666" },
+  millasActions: { flexDirection: "row", alignItems: "center" },
+  millasBtnMinus: { backgroundColor: "#FF5252", padding: 5, borderRadius: 5 },
+  millasBtnPlus: {
+    backgroundColor: COLORS.primaryGreen,
+    padding: 5,
+    borderRadius: 5,
+  },
+  millasText: {
+    fontWeight: "bold",
+    fontSize: 16,
+    color: COLORS.darkGreen,
+    marginHorizontal: 12,
+  },
   footerAccion: {
     position: "absolute",
-    bottom: 15,
-    left: 10,
-    right: 10,
-    backgroundColor: COLORS.darkGreen,
-    borderRadius: 25,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#FFF",
     padding: 15,
-    elevation: 12,
+    borderTopWidth: 1,
+    borderColor: "#DDD",
+    elevation: 10,
   },
-  footerText: { color: "#fff", fontWeight: "bold", fontSize: 13 },
+  footerText: { fontWeight: "bold", fontSize: 14, marginBottom: 5 },
+  miniTab: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 15,
+    backgroundColor: "#F0F0F0",
+    marginRight: 8,
+  },
+  miniTabActive: { backgroundColor: COLORS.primaryGreen },
+  miniTabText: { fontSize: 10, color: "#333" },
   footerButtons: {
     flexDirection: "row",
-    justifyContent: "flex-end",
-    marginTop: 10,
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  btnCan: {
+    backgroundColor: "#FF5252",
+    padding: 10,
+    borderRadius: 10,
+    width: "15%",
+    alignItems: "center",
   },
   btnOk: {
     backgroundColor: COLORS.primaryGreen,
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 15,
-    marginLeft: 8,
+    padding: 12,
+    borderRadius: 10,
+    width: "38%",
+    alignItems: "center",
   },
   btnFinalizar: {
-    backgroundColor: "#2196F3",
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 15,
-    marginLeft: 8,
+    backgroundColor: COLORS.darkGreen,
+    padding: 12,
+    borderRadius: 10,
+    width: "38%",
+    alignItems: "center",
   },
-  btnText: { color: "#fff", fontWeight: "bold", fontSize: 10 },
-  btnCan: {
-    backgroundColor: "rgba(255,255,255,0.2)",
-    padding: 10,
-    borderRadius: 15,
-  },
-  miniTab: {
-    padding: 8,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    marginRight: 5,
-    borderRadius: 8,
-  },
-  miniTabActive: { backgroundColor: COLORS.primaryGreen },
-  miniTabText: { color: "#fff", fontSize: 8, fontWeight: "bold" },
+  btnText: { color: "#fff", fontWeight: "bold", fontSize: 12 },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -710,26 +947,29 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalContent: {
-    backgroundColor: "#fff",
+    backgroundColor: "#FFF",
     borderRadius: 20,
     padding: 20,
     maxHeight: "80%",
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 15,
-    textAlign: "center",
+  modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 15 },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: "#DDD",
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 12,
   },
+  label: { fontSize: 12, color: "#666", marginBottom: 4 },
   bulkActions: {
     flexDirection: "row",
-    justifyContent: "space-around",
-    marginBottom: 15,
+    justifyContent: "flex-end",
+    marginBottom: 10,
   },
   actionLink: {
     color: COLORS.primaryGreen,
-    fontWeight: "bold",
-    textDecorationLine: "underline",
+    marginHorizontal: 10,
+    fontSize: 13,
   },
   waItem: {
     flexDirection: "row",
@@ -738,21 +978,26 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#EEE",
   },
-  waName: { fontWeight: "bold" },
-  waSub: { fontSize: 12, color: "#666" },
+  waName: { fontWeight: "bold", fontSize: 14 },
+  waSub: { fontSize: 11, color: "#666" },
   modalFooter: {
     flexDirection: "row",
-    marginTop: 20,
     justifyContent: "space-between",
+    marginTop: 15,
   },
-  btnCancel: { padding: 15, flex: 1, alignItems: "center" },
-  btnSendAll: {
-    backgroundColor: "#25D366",
-    padding: 15,
-    borderRadius: 15,
-    flex: 2,
+  btnCancel: {
+    backgroundColor: "#DDD",
+    padding: 12,
+    borderRadius: 10,
+    width: "45%",
     alignItems: "center",
   },
-  btnTextBlack: { color: "#333" },
-  loader: { position: "absolute", top: "50%", left: "45%" },
+  btnSendAll: {
+    backgroundColor: COLORS.primaryGreen,
+    padding: 12,
+    borderRadius: 10,
+    width: "50%",
+    alignItems: "center",
+  },
+  btnTextBlack: { color: "#000", fontWeight: "bold" },
 });
