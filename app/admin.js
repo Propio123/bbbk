@@ -1,6 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { signOut } from "firebase/auth";
 import {
   collection,
   doc,
@@ -8,9 +7,8 @@ import {
   increment,
   onSnapshot,
   query,
-  serverTimestamp,
   updateDoc,
-  where,
+  where
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -26,77 +24,152 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { auth, db } from "../src/api/firebase.config";
+import { db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
 
-// Nueva estructura de especialidades y sus médicos
-const ESPECIALIDADES = {
-  Odontología: ["Dr. Chávez", "Dra. Espinoza"],
-  Pediatría: ["Dr. Ruiz", "Dra. Mora"],
-  Ginecología: ["Dr. León", "Dra. Vallejo"],
-  "Medicina General": ["Dr. Castillo", "Dra. Paredes", "Dr. Salazar"],
-};
-
-const LISTA_ESPECIALIDADES = Object.keys(ESPECIALIDADES);
+const DATA_ESPECIALIDADES = [
+  { id: "gen", nombre: "General", medico: "Dra. Doménica Palma", duracion: 30 },
+  {
+    id: "ort",
+    nombre: "Ortodoncia",
+    medico: "Dr. Bladimir Benavidez",
+    duracion: 30,
+  },
+  { id: "end", nombre: "Endodoncia", medico: "Dr. Xavier C.", duracion: 60 },
+  { id: "cir", nombre: "Cirugía", medico: "Dr. Darwin Congo", duracion: 90 },
+  {
+    id: "est",
+    nombre: "Estética",
+    medico: "Dr. Santiago Benalcazar",
+    duracion: 45,
+  },
+  {
+    id: "per",
+    nombre: "Periodoncia",
+    medico: "Dra. Eliana Cespedes",
+    duracion: 30,
+  },
+  {
+    id: "reh",
+    nombre: "Rehabilitación",
+    medico: "Dr. Jose Cargua",
+    duracion: 60,
+  },
+  {
+    id: "adop",
+    nombre: "Odontopediatría",
+    medico: "Dra. Sofía Benavides",
+    duracion: 60,
+  },
+];
 
 export default function AdminMasterPanel() {
   const router = useRouter();
   const [vistaActual, setVistaActual] = useState("agenda");
   const [loading, setLoading] = useState(false);
 
-  // --- ESTADOS AGENDA & CLIENTES ---
+  // --- ESTADOS MÉDICOS ---
+  const [listaMedicos, setListaMedicos] = useState([]);
+  const [medicoSel, setMedicoSel] = useState("");
+
+  // --- ESTADOS AGENDA ---
   const [fechaSel, setFechaSel] = useState(
     new Date().toISOString().split("T")[0],
   );
-
-  // Estados de jerarquía
-  const [especialidadSel, setEspecialidadSel] = useState(
-    LISTA_ESPECIALIDADES[0],
-  );
-  const [medicoSel, setMedicoSel] = useState("Todos");
-
   const [citas, setCitas] = useState([]);
+
+  // --- ESTADOS CLIENTES ---
   const [clientes, setClientes] = useState([]);
   const [busqueda, setBusqueda] = useState("");
-  const [citaBase, setCitaBase] = useState(null);
-  const [nuevoMedico, setNuevoMedico] = useState(null);
-  const [seleccionMultiple, setSeleccionMultiple] = useState([]);
+  const [puntosManuales, setPuntosManuales] = useState({}); // Para el input digitalizable
 
-  // --- ESTADOS WHATSAPP MODAL ---
-  const [modalVisible, setModalVisible] = useState(false);
+  // --- MODALES ---
+  const [modalMedicos, setModalMedicos] = useState(false);
+  const [modalWA, setModalWA] = useState(false);
   const [citasManana, setCitasManana] = useState([]);
 
-  // 1. Escucha de Citas (Agenda con filtro de Especialidad y Médico)
+  // 1. Inicialización y Escuchas
   useEffect(() => {
-    if (vistaActual !== "agenda") return;
+    const unsub = onSnapshot(collection(db, "especialidades"), (snap) => {
+      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setListaMedicos(docs);
+      if (docs.length > 0 && !medicoSel) setMedicoSel(docs[0].medico);
+    });
+    return () => unsub();
+  }, []);
 
-    let q = query(
-      collection(db, "citas"),
-      where("fecha", "==", fechaSel),
-      where("especialidad", "==", especialidadSel),
-    );
-
-    // Filtro opcional por médico específico dentro de la especialidad
-    if (medicoSel !== "Todos") {
-      q = query(q, where("medico", "==", medicoSel));
+  useEffect(() => {
+    if (vistaActual === "agenda" && medicoSel) {
+      const q = query(
+        collection(db, "citas"),
+        where("fecha", "==", fechaSel),
+        where("medico", "==", medicoSel),
+      );
+      return onSnapshot(q, (snap) =>
+        setCitas(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      );
     }
+    if (vistaActual === "clientes") {
+      return onSnapshot(collection(db, "users"), (snap) =>
+        setClientes(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      );
+    }
+  }, [fechaSel, medicoSel, vistaActual]);
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setCitas(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-    return () => unsubscribe();
-  }, [fechaSel, especialidadSel, medicoSel, vistaActual]);
+  // 2. Lógica de WhatsApp Masivo
+  const prepararWA = async () => {
+    const manana = new Date();
+    manana.setDate(manana.getDate() + 1);
+    const fechaM = manana.toISOString().split("T")[0];
+    setLoading(true);
+    try {
+      const q = query(
+        collection(db, "citas"),
+        where("fecha", "==", fechaM),
+        where("estado", "==", "aprobado"),
+      );
+      const snap = await getDocs(q);
+      const data = snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+        seleccionado: true,
+      }));
+      setCitasManana(data);
+      if (data.length === 0)
+        Alert.alert("Aviso", "No hay citas aprobadas para mañana.");
+      else setModalWA(true);
+    } catch (e) {
+      Alert.alert("Error", "Error al consultar citas.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // 2. Escucha de Usuarios (Clientes)
-  useEffect(() => {
-    if (vistaActual !== "clientes") return;
-    const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
-      setClientes(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-    return () => unsubscribe();
-  }, [vistaActual]);
+  const enviarMasivo = async () => {
+    const seleccionados = citasManana.filter((c) => c.seleccionado);
+    for (const c of seleccionados) {
+      let tel = (c.telefonoPaciente || "").replace(/\D/g, "");
+      if (tel.startsWith("0")) tel = "593" + tel.substring(1);
+      const msg = `Hola ${c.nombrePaciente}, confirmamos su cita de ${c.especialidad || "Odontología"} para mañana a las ${c.hora}. ¿Nos confirma su asistencia?`;
+      await Linking.openURL(
+        `https://api.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent(msg)}`,
+      );
+      await new Promise((r) => setTimeout(r, 1200)); // Delay para evitar bloqueos
+    }
+    setModalWA(false);
+  };
 
-  // 3. Mapeo de Agenda para el Grid
+  // 3. Gestión de Cumpleaños
+  const esCumpleanos = (fechaNac) => {
+    if (!fechaNac) return false;
+    const hoy = new Date();
+    const cumple = new Date(fechaNac);
+    return (
+      hoy.getDate() === cumple.getDate() && hoy.getMonth() === cumple.getMonth()
+    );
+  };
+
+  // 4. Mapeo de Agenda
   const agendaMap = useMemo(() => {
     const map = {};
     citas.forEach((cita) => {
@@ -104,8 +177,7 @@ export default function AdminMasterPanel() {
       let [h, m] = cita.hora.split(":").map(Number);
       for (let i = 0; i < slots; i++) {
         const key = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
-        if (!map[key])
-          map[key] = { ...cita, esInicio: i === 0, esContinuacion: i > 0 };
+        if (!map[key]) map[key] = { ...cita, esInicio: i === 0 };
         m += 15;
         if (m >= 60) {
           h++;
@@ -124,410 +196,186 @@ export default function AdminMasterPanel() {
       );
   }
 
-  // 4. Buscador de Clientes
-  const clientesFiltrados = useMemo(() => {
-    const term = busqueda.toLowerCase().trim();
-    if (!term) return clientes;
-    return clientes.filter(
-      (c) =>
-        (c.displayName || "").toLowerCase().includes(term) ||
-        (c.email || "").toLowerCase().includes(term),
-    );
-  }, [clientes, busqueda]);
-
-  // --- LOGICA AGENDA ---
-  const cancelarSeleccion = () => {
-    setCitaBase(null);
-    setSeleccionMultiple([]);
-    setNuevoMedico(null);
-  };
-
-  const manejarToqueSlot = (hora, info) => {
-    if (citaBase) {
-      if (info && info.id !== citaBase.id) return;
-      setSeleccionMultiple((prev) =>
-        prev.includes(hora)
-          ? prev.filter((h) => h !== hora)
-          : [...prev, hora].sort(),
-      );
-    } else if (info) {
-      setCitaBase(info);
-      setNuevoMedico(info.medico);
-      setSeleccionMultiple([info.hora]);
-    }
-  };
-
-  const finalizarCitaManual = async () => {
-    if (!citaBase?.userId)
-      return Alert.alert("Error", "Cita sin usuario vinculado");
-    setLoading(true);
-    try {
-      await updateDoc(doc(db, "users", citaBase.userId), {
-        totalCitas: increment(1),
-        puntosSalud: increment(1),
-        ultimaAtencion: serverTimestamp(),
-      });
-      await updateDoc(doc(db, "citas", citaBase.id), { estado: "finalizada" });
-      Alert.alert("Éxito", "Atención finalizada.");
-      cancelarSeleccion();
-    } catch (e) {
-      Alert.alert("Error", "No se pudo finalizar.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const guardarCambiosAgenda = async () => {
-    if (!citaBase) return;
-    setLoading(true);
-
-    // Buscamos a qué especialidad pertenece el médico asignado
-    const nuevaEsp = Object.keys(ESPECIALIDADES).find((esp) =>
-      ESPECIALIDADES[esp].includes(nuevoMedico),
-    );
-
-    try {
-      await updateDoc(doc(db, "citas", citaBase.id), {
-        duracion: seleccionMultiple.length * 15,
-        hora: seleccionMultiple[0],
-        medico: nuevoMedico || citaBase.medico,
-        especialidad: nuevaEsp || citaBase.especialidad,
-        estado: "aprobado",
-      });
-      cancelarSeleccion();
-    } catch (e) {
-      Alert.alert("Error", "No se pudo actualizar.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // --- LÓGICA WHATSAPP ---
-  const prepararConfirmaciones = async () => {
-    const manana = new Date();
-    manana.setDate(manana.getDate() + 1);
-    const fechaManana = manana.toISOString().split("T")[0];
-    setLoading(true);
-    try {
-      const q = query(
-        collection(db, "citas"),
-        where("fecha", "==", fechaManana),
-        where("estado", "==", "aprobado"),
-      );
-      const snap = await getDocs(q);
-      setCitasManana(
-        snap.docs.map((d) => ({ id: d.id, ...d.data(), seleccionado: true })),
-      );
-      setModalVisible(true);
-    } catch (e) {
-      Alert.alert("Error", "Revisa los índices de Firebase.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const enviarSeleccionados = async () => {
-    const seleccionados = citasManana.filter((c) => c.seleccionado);
-    for (const cita of seleccionados) {
-      let tel = (cita.telefonoPaciente || "").replace(/\D/g, "");
-      if (tel.startsWith("0")) tel = "593" + tel.substring(1);
-      if (tel && !tel.startsWith("593")) tel = "593" + tel;
-      const msg = `Hola ${cita.nombrePaciente}, confirmamos su cita para mañana a las ${cita.hora}. ¿Nos confirma su asistencia?`;
-      const url = `https://api.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent(msg)}`;
-      await Linking.openURL(url);
-      await new Promise((r) => setTimeout(r, 800));
-    }
-    setModalVisible(false);
-  };
-
   return (
     <View style={styles.container}>
-      {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <Text style={styles.headerTitle}>333K Master</Text>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <TouchableOpacity
-              onPress={prepararConfirmaciones}
-              style={styles.iconBtn}
-            >
+          <Text style={styles.headerTitle}>333K Master Panel</Text>
+          <View style={{ flexDirection: "row" }}>
+            <TouchableOpacity onPress={prepararWA} style={styles.iconBtn}>
               <MaterialCommunityIcons
                 name="whatsapp"
-                size={28}
+                size={26}
                 color="#25D366"
               />
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => {
-                setVistaActual(
-                  vistaActual === "agenda" ? "clientes" : "agenda",
-                );
-                cancelarSeleccion();
-              }}
+              onPress={() => setModalMedicos(true)}
+              style={styles.iconBtn}
+            >
+              <MaterialCommunityIcons name="doctor" size={26} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() =>
+                setVistaActual(vistaActual === "agenda" ? "clientes" : "agenda")
+              }
               style={styles.iconBtn}
             >
               <MaterialCommunityIcons
                 name={
                   vistaActual === "agenda" ? "account-group" : "calendar-month"
                 }
-                size={28}
+                size={26}
                 color="#fff"
               />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => signOut(auth).then(() => router.replace("/login"))}
-            >
-              <MaterialCommunityIcons name="power" size={26} color="#fff" />
             </TouchableOpacity>
           </View>
         </View>
 
         {vistaActual === "agenda" && (
-          <>
-            {/* TABS ESPECIALIDADES */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.medicoScroll}
-            >
-              {LISTA_ESPECIALIDADES.map((esp) => (
-                <TouchableOpacity
-                  key={esp}
-                  onPress={() => {
-                    setEspecialidadSel(esp);
-                    setMedicoSel("Todos");
-                    cancelarSeleccion();
-                  }}
-                  style={[
-                    styles.tab,
-                    especialidadSel === esp && styles.tabActive,
-                  ]}
-                >
-                  <Text style={styles.tabText}>{esp.toUpperCase()}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* SUB-TABS MEDICOS */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={{ marginTop: 10 }}
-            >
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginTop: 15 }}
+          >
+            {listaMedicos.map((m) => (
               <TouchableOpacity
-                onPress={() => setMedicoSel("Todos")}
-                style={[
-                  styles.miniTabHeader,
-                  medicoSel === "Todos" && styles.miniTabHeaderActive,
-                ]}
+                key={m.id}
+                onPress={() => setMedicoSel(m.medico)}
+                style={[styles.tab, medicoSel === m.medico && styles.tabActive]}
               >
-                <Text style={styles.miniTabText}>TODOS</Text>
+                <Text style={styles.tabText}>{m.nombre}</Text>
               </TouchableOpacity>
-              {ESPECIALIDADES[especialidadSel].map((m) => (
-                <TouchableOpacity
-                  key={m}
-                  onPress={() => setMedicoSel(m)}
-                  style={[
-                    styles.miniTabHeader,
-                    medicoSel === m && styles.miniTabHeaderActive,
-                  ]}
-                >
-                  <Text style={styles.miniTabText}>{m}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            <View style={styles.dateNav}>
-              <TouchableOpacity
-                onPress={() => {
-                  const d = new Date(fechaSel + "T12:00:00");
-                  d.setDate(d.getDate() - 1);
-                  setFechaSel(d.toISOString().split("T")[0]);
-                }}
-              >
-                <MaterialCommunityIcons
-                  name="chevron-left"
-                  size={35}
-                  color="#fff"
-                />
-              </TouchableOpacity>
-              <Text style={styles.dateText}>{fechaSel}</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  const d = new Date(fechaSel + "T12:00:00");
-                  d.setDate(d.getDate() + 1);
-                  setFechaSel(d.toISOString().split("T")[0]);
-                }}
-              >
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={35}
-                  color="#fff"
-                />
-              </TouchableOpacity>
-            </View>
-          </>
+            ))}
+          </ScrollView>
         )}
       </View>
 
-      {/* CONTENIDO PRINCIPAL */}
       {vistaActual === "agenda" ? (
         <ScrollView contentContainerStyle={styles.grid}>
           {HORARIOS.map((h) => {
             const info = agendaMap[h];
-            const estaSel = seleccionMultiple.includes(h);
             return (
-              <TouchableOpacity
+              <View
                 key={h}
-                onPress={() => manejarToqueSlot(h, info)}
                 style={[
                   styles.slot,
-                  info?.estado === "pendiente" && styles.bgAmarillo,
                   info?.estado === "aprobado" && styles.bgRojo,
-                  info?.estado === "finalizada" && styles.bgGris,
-                  estaSel && styles.bgSeleccion,
-                  info?.esContinuacion && { borderTopWidth: 0, marginTop: -2 },
                 ]}
               >
-                <Text
-                  style={[
-                    styles.slotText,
-                    (info || estaSel) && { color: "#000", fontWeight: "bold" },
-                  ]}
-                >
+                <Text style={[styles.slotText, info && { color: "#000" }]}>
                   {h}
                 </Text>
                 {info?.esInicio && (
-                  <Text style={styles.pacienteTag} numberOfLines={1}>
-                    {info.nombrePaciente}
-                  </Text>
+                  <Text style={styles.pacienteTag}>{info.nombrePaciente}</Text>
                 )}
-              </TouchableOpacity>
+              </View>
             );
           })}
         </ScrollView>
       ) : (
-        <View style={styles.clientesContainer}>
+        <View style={{ flex: 1, padding: 15 }}>
           <TextInput
             style={styles.searchBar}
-            placeholder="Buscar por nombre o email..."
-            value={busqueda}
+            placeholder="Buscar cliente..."
             onChangeText={setBusqueda}
           />
           <FlatList
-            data={clientesFiltrados}
+            data={clientes.filter((c) =>
+              (c.nombre || c.displayName || "")
+                .toLowerCase()
+                .includes(busqueda.toLowerCase()),
+            )}
             keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <View style={styles.clienteCard}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.clienteName}>
-                    {item.displayName || "Paciente"}
-                  </Text>
-                  <View
-                    style={[
-                      styles.badge,
-                      {
-                        backgroundColor:
-                          item.tipoCliente === "PREMIUM"
-                            ? "#D4AF37"
-                            : item.tipoCliente === "PRO"
-                              ? "#C0C0C0"
-                              : "#CD7F32",
-                      },
-                    ]}
-                  >
-                    <Text style={styles.badgeText}>
-                      {item.tipoCliente || "PRI"}
-                    </Text>
+            renderItem={({ item }) => {
+              const cumple = esCumpleanos(item.fechaNacimiento);
+              return (
+                <View style={[styles.clienteCard, cumple && styles.cardCumple]}>
+                  <View style={styles.cardHeader}>
+                    <View>
+                      <View
+                        style={{ flexDirection: "row", alignItems: "center" }}
+                      >
+                        <Text style={styles.clienteName}>
+                          {item.nombre || item.displayName || "Paciente"}
+                        </Text>
+                        {cumple && (
+                          <MaterialCommunityIcons
+                            name="cake-variant"
+                            size={18}
+                            color="#FF4081"
+                            style={{ marginLeft: 5 }}
+                          />
+                        )}
+                      </View>
+                      {cumple && (
+                        <Text style={styles.cumpleAlerta}>
+                          ¡Hoy es su cumpleaños!
+                        </Text>
+                      )}
+                    </View>
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>
+                        {item.tipoCliente || "PRI"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.millasRow}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        flex: 1,
+                      }}
+                    >
+                      <Text style={styles.millasLabel}>Millas:</Text>
+                      <TextInput
+                        style={styles.millasInput}
+                        keyboardType="numeric"
+                        defaultValue={String(item.puntosSalud || 0)}
+                        onEndEditing={(e) =>
+                          updateDoc(doc(db, "users", item.id), {
+                            puntosSalud: Number(e.nativeEvent.text),
+                          })
+                        }
+                      />
+                    </View>
+                    <View style={{ flexDirection: "row" }}>
+                      <TouchableOpacity
+                        onPress={() =>
+                          updateDoc(doc(db, "users", item.id), {
+                            puntosSalud: increment(10),
+                          })
+                        }
+                        style={styles.btnAccion}
+                      >
+                        <Text style={styles.btnText}>+10</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() =>
+                          updateDoc(doc(db, "users", item.id), {
+                            puntosSalud: increment(-10),
+                          })
+                        }
+                        style={styles.btnAccion}
+                      >
+                        <Text style={styles.btnText}>-10</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
-                <View style={styles.nivelesRow}>
-                  {["PRI", "PRO", "PREMIUM"].map((n) => (
-                    <TouchableOpacity
-                      key={n}
-                      onPress={() =>
-                        updateDoc(doc(db, "users", item.id), { tipoCliente: n })
-                      }
-                      style={[
-                        styles.nivelBtn,
-                        item.tipoCliente === n && styles.nivelBtnActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.nivelBtnText,
-                          item.tipoCliente === n && { color: "#FFF" },
-                        ]}
-                      >
-                        {n}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            )}
+              );
+            }}
           />
-        </View>
-      )}
-
-      {/* FOOTER EDITOR AGENDA */}
-      {citaBase && vistaActual === "agenda" && (
-        <View style={styles.footerAccion}>
-          <Text style={styles.footerText}>
-            Paciente: {citaBase.nombrePaciente}
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ marginVertical: 8 }}
-          >
-            {/* Lista de médicos de la especialidad actual para reasignar */}
-            {ESPECIALIDADES[especialidadSel].map((m) => (
-              <TouchableOpacity
-                key={m}
-                onPress={() => setNuevoMedico(m)}
-                style={[
-                  styles.miniTab,
-                  (nuevoMedico === m ||
-                    (!nuevoMedico && citaBase.medico === m)) &&
-                    styles.miniTabActive,
-                ]}
-              >
-                <Text style={styles.miniTabText}>{m}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-          <View style={styles.footerButtons}>
-            <TouchableOpacity style={styles.btnCan} onPress={cancelarSeleccion}>
-              <MaterialCommunityIcons name="close" size={24} color="#fff" />
-            </TouchableOpacity>
-            {citaBase.estado === "aprobado" && (
-              <TouchableOpacity
-                style={styles.btnFinalizar}
-                onPress={finalizarCitaManual}
-              >
-                <Text style={styles.btnText}>FINALIZAR</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              style={styles.btnOk}
-              onPress={guardarCambiosAgenda}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.btnText}>GUARDAR</Text>
-              )}
-            </TouchableOpacity>
-          </View>
         </View>
       )}
 
       {/* MODAL WHATSAPP MASIVO */}
-      <Modal visible={modalVisible} animationType="slide" transparent={true}>
+      <Modal visible={modalWA} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Confirmaciones de Mañana</Text>
+            <Text style={styles.modalTitle}>Confirmaciones para Mañana</Text>
             <FlatList
               data={citasManana}
               keyExtractor={(item) => item.id}
@@ -535,10 +383,10 @@ export default function AdminMasterPanel() {
                 <TouchableOpacity
                   onPress={() =>
                     setCitasManana(
-                      citasManana.map((c) =>
-                        c.id === item.id
-                          ? { ...c, seleccionado: !c.seleccionado }
-                          : c,
+                      citasManana.map((x) =>
+                        x.id === item.id
+                          ? { ...x, seleccionado: !x.seleccionado }
+                          : x,
                       ),
                     )
                   }
@@ -554,28 +402,66 @@ export default function AdminMasterPanel() {
                     color={COLORS.primaryGreen}
                   />
                   <View style={{ marginLeft: 10 }}>
-                    <Text style={styles.waName}>{item.nombrePaciente}</Text>
-                    <Text style={styles.waSub}>
+                    <Text style={{ fontWeight: "bold" }}>
+                      {item.nombrePaciente}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: "#666" }}>
                       {item.hora} - {item.medico}
                     </Text>
                   </View>
                 </TouchableOpacity>
               )}
             />
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.btnCancel}
-                onPress={() => setModalVisible(false)}
-              >
-                <Text style={styles.btnTextBlack}>Cerrar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.btnSendAll}
-                onPress={enviarSeleccionados}
-              >
-                <Text style={styles.btnText}>Enviar WhatsApps</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity onPress={enviarMasivo} style={styles.btnPrimario}>
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                ENVIAR MENSAJES
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setModalWA(false)}
+              style={styles.btnSecundario}
+            >
+              <Text>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL EDITAR MEDICOS */}
+      <Modal visible={modalMedicos} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Especialistas Activos</Text>
+            <ScrollView>
+              {listaMedicos.map((m) => (
+                <View key={m.id} style={{ marginBottom: 10 }}>
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      color: COLORS.primaryGreen,
+                      fontWeight: "bold",
+                    }}
+                  >
+                    {m.nombre}
+                  </Text>
+                  <TextInput
+                    style={styles.inputEdit}
+                    defaultValue={m.medico}
+                    onEndEditing={(e) =>
+                      updateDoc(doc(db, "especialidades", m.id), {
+                        medico: e.nativeEvent.text,
+                      })
+                    }
+                  />
+                </View>
+              ))}
+            </ScrollView>
+            <TouchableOpacity
+              onPress={() => setModalMedicos(false)}
+              style={styles.btnClose}
+            >
+              <Text style={{ color: "#fff" }}>Cerrar</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -605,49 +491,23 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  headerTitle: { color: "#fff", fontSize: 20, fontWeight: "bold" },
-  iconBtn: { marginRight: 15 },
-  medicoScroll: { marginTop: 15 },
+  headerTitle: { color: "#fff", fontSize: 18, fontWeight: "bold" },
+  iconBtn: { marginLeft: 15 },
   tab: {
     paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+    paddingHorizontal: 15,
+    borderRadius: 15,
     backgroundColor: "rgba(255,255,255,0.1)",
-    marginRight: 10,
+    marginRight: 8,
   },
   tabActive: { backgroundColor: COLORS.primaryGreen },
-  tabText: { color: "#fff", fontSize: 11, fontWeight: "600" },
-  miniTabHeader: {
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-    borderRadius: 15,
-    backgroundColor: "rgba(255,255,255,0.05)",
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
-  },
-  miniTabHeaderActive: {
-    backgroundColor: COLORS.primaryGreen,
-    borderColor: "#fff",
-  },
-  dateNav: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 10,
-  },
-  dateText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "bold",
-    marginHorizontal: 20,
-  },
+  tabText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
   grid: {
     padding: 10,
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    paddingBottom: 170,
+    paddingBottom: 50,
   },
   slot: {
     width: "23%",
@@ -658,98 +518,72 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#EDEFF2",
+    borderColor: "#EEE",
   },
-  slotText: { fontSize: 10, color: "#B0B5C1" },
-  pacienteTag: {
-    fontSize: 7,
-    color: "#333",
-    fontWeight: "bold",
-    marginTop: 2,
-    textAlign: "center",
-  },
-  bgAmarillo: { backgroundColor: "#FFD700" },
+  slotText: { fontSize: 10, color: "#CCC" },
+  pacienteTag: { fontSize: 7, fontWeight: "bold", textAlign: "center" },
   bgRojo: { backgroundColor: "#FF5252" },
-  bgGris: { backgroundColor: "#DDD", opacity: 0.5 },
-  bgSeleccion: {
-    backgroundColor: "#E8F5E9",
-    borderColor: COLORS.primaryGreen,
-    borderWidth: 2,
-  },
-  clientesContainer: { flex: 1, padding: 15 },
   searchBar: {
     backgroundColor: "#fff",
-    padding: 12,
-    borderRadius: 12,
+    padding: 10,
+    borderRadius: 10,
     marginBottom: 15,
-    elevation: 2,
   },
   clienteCard: {
     backgroundColor: "#fff",
     padding: 15,
     borderRadius: 15,
     marginBottom: 10,
-    elevation: 3,
+    elevation: 2,
   },
-  cardHeader: { flexDirection: "row", justifyContent: "space-between" },
-  clienteName: { fontWeight: "bold", fontSize: 16 },
-  nivelesRow: { flexDirection: "row", marginTop: 10 },
-  nivelBtn: {
-    flex: 1,
-    padding: 8,
-    alignItems: "center",
-    backgroundColor: "#F0F0F0",
-    borderRadius: 8,
-    marginHorizontal: 2,
+  cardCumple: {
+    borderColor: "#FF4081",
+    borderWidth: 2,
+    backgroundColor: "#FFF5F8",
   },
-  nivelBtnActive: { backgroundColor: COLORS.darkGreen },
-  nivelBtnText: { fontSize: 9, color: "#999", fontWeight: "bold" },
-  badge: { paddingHorizontal: 8, borderRadius: 5 },
-  badgeText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
-  footerAccion: {
-    position: "absolute",
-    bottom: 15,
-    left: 10,
-    right: 10,
-    backgroundColor: COLORS.darkGreen,
-    borderRadius: 25,
-    padding: 15,
-    elevation: 12,
-  },
-  footerText: { color: "#fff", fontWeight: "bold", fontSize: 13 },
-  footerButtons: {
+  cumpleAlerta: { fontSize: 10, color: "#FF4081", fontWeight: "bold" },
+  cardHeader: {
     flexDirection: "row",
-    justifyContent: "flex-end",
-    marginTop: 10,
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  btnOk: {
+  clienteName: { fontWeight: "bold", fontSize: 15 },
+  badge: {
+    backgroundColor: COLORS.darkGreen,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  badgeText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
+  millasRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 12,
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderColor: "#EEE",
+    paddingTop: 10,
+  },
+  millasLabel: { fontSize: 12, color: "#666" },
+  millasInput: {
+    backgroundColor: "#F0F0F0",
+    width: 60,
+    textAlign: "center",
+    fontWeight: "bold",
+    borderRadius: 5,
+    padding: 5,
+    marginHorizontal: 5,
+    color: COLORS.darkGreen,
+  },
+  btnAccion: {
     backgroundColor: COLORS.primaryGreen,
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 15,
-    marginLeft: 8,
-  },
-  btnFinalizar: {
-    backgroundColor: "#2196F3",
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 15,
-    marginLeft: 8,
-  },
-  btnText: { color: "#fff", fontWeight: "bold", fontSize: 10 },
-  btnCan: {
-    backgroundColor: "rgba(255,255,255,0.2)",
-    padding: 10,
-    borderRadius: 15,
-  },
-  miniTab: {
-    padding: 8,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    marginRight: 5,
+    padding: 6,
     borderRadius: 8,
+    marginLeft: 5,
+    width: 40,
+    alignItems: "center",
   },
-  miniTabActive: { backgroundColor: COLORS.primaryGreen },
-  miniTabText: { color: "#fff", fontSize: 8, fontWeight: "bold" },
+  btnText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -758,38 +592,43 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: "#fff",
-    borderRadius: 20,
     padding: 20,
+    borderRadius: 25,
     maxHeight: "80%",
   },
   modalTitle: {
-    fontSize: 18,
     fontWeight: "bold",
+    fontSize: 16,
     marginBottom: 15,
     textAlign: "center",
   },
   waItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
+    padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#EEE",
+    borderColor: "#EEE",
   },
-  waName: { fontWeight: "bold" },
-  waSub: { fontSize: 12, color: "#666" },
-  modalFooter: {
-    flexDirection: "row",
-    marginTop: 20,
-    justifyContent: "space-between",
-  },
-  btnCancel: { padding: 15, flex: 1, alignItems: "center" },
-  btnSendAll: {
+  btnPrimario: {
     backgroundColor: "#25D366",
     padding: 15,
     borderRadius: 15,
-    flex: 2,
+    alignItems: "center",
+    marginTop: 20,
+  },
+  btnSecundario: { padding: 15, alignItems: "center" },
+  inputEdit: {
+    borderBottomWidth: 1,
+    borderColor: "#DDD",
+    paddingVertical: 5,
+    fontSize: 14,
+  },
+  btnClose: {
+    backgroundColor: COLORS.darkGreen,
+    padding: 12,
+    borderRadius: 15,
+    marginTop: 15,
     alignItems: "center",
   },
-  btnTextBlack: { color: "#333" },
-  loader: { position: "absolute", top: "50%", left: "45%" },
+  loader: { position: "absolute", top: "50%", alignSelf: "center" },
 });
