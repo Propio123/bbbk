@@ -110,7 +110,6 @@ export default function AdminMasterPanel() {
     for (const c of seleccionados) {
       let tel = (c.telefonoPaciente || "").replace(/\D/g, "");
 
-      // Ajuste de código de país para Ecuador (593)
       if (tel.startsWith("0")) {
         tel = "593" + tel.substring(1);
       } else if (!tel.startsWith("593")) {
@@ -125,7 +124,6 @@ export default function AdminMasterPanel() {
         if (supported) {
           await Linking.openURL(url);
         } else {
-          // Fallback a la web si la app no está instalada
           await Linking.openURL(
             `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,
           );
@@ -134,7 +132,6 @@ export default function AdminMasterPanel() {
         console.error("Error al abrir WhatsApp:", error);
       }
 
-      // Aumentar el tiempo de espera entre envíos para evitar bloqueos del sistema
       await new Promise((r) => setTimeout(r, 2000));
     }
     setModalWA(false);
@@ -317,16 +314,40 @@ export default function AdminMasterPanel() {
                   <Text style={{ fontSize: 10, color: "#666", marginRight: 5 }}>
                     Millas:
                   </Text>
+
+                  {/* INPUT PARA DIGITACIÓN MANUAL */}
                   <TextInput
                     style={styles.millasInput}
                     keyboardType="numeric"
-                    defaultValue={String(item.puntosSalud || 0)}
-                    onEndEditing={(e) =>
+                    value={String(item.puntosSalud || 0)}
+                    onChangeText={(text) => {
+                      const val = Number(text.replace(/[^0-9]/g, ""));
                       updateDoc(doc(db, "users", item.id), {
-                        puntosSalud: Number(e.nativeEvent.text),
-                      })
-                    }
+                        puntosSalud: val,
+                      });
+                    }}
                   />
+
+                  {/* BOTÓN DECREMENTO */}
+                  <TouchableOpacity
+                    onPress={() => {
+                      const actual = item.puntosSalud || 0;
+                      if (actual >= 10) {
+                        updateDoc(doc(db, "users", item.id), {
+                          puntosSalud: increment(-10),
+                        });
+                      } else {
+                        updateDoc(doc(db, "users", item.id), {
+                          puntosSalud: 0,
+                        });
+                      }
+                    }}
+                    style={[styles.btnSmall, { backgroundColor: "#FF5252" }]}
+                  >
+                    <Text style={styles.btnText}>-10</Text>
+                  </TouchableOpacity>
+
+                  {/* BOTÓN INCREMENTO */}
                   <TouchableOpacity
                     onPress={() =>
                       updateDoc(doc(db, "users", item.id), {
@@ -562,18 +583,21 @@ const styles = StyleSheet.create({
   },
   millasInput: {
     backgroundColor: "#F0F0F0",
-    width: 55,
+    width: 65,
     textAlign: "center",
     borderRadius: 8,
     padding: 5,
     fontWeight: "bold",
     color: COLORS.darkGreen,
+    marginRight: 5,
   },
   btnSmall: {
     backgroundColor: COLORS.primaryGreen,
     padding: 6,
     borderRadius: 8,
     marginLeft: 5,
+    minWidth: 35,
+    alignItems: "center",
   },
   btnText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
   editPanel: {
