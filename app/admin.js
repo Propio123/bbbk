@@ -34,10 +34,9 @@ import { COLORS } from "../src/constants/theme";
 
 export default function AdminMasterPanel() {
   const router = useRouter();
-  const [vistaActual, setVistaActual] = useState("agenda"); // agenda, clientes, especialidades
+  const [vistaActual, setVistaActual] = useState("agenda");
   const [loading, setLoading] = useState(false);
 
-  // --- ESTADOS DINÁMICOS ---
   const [fechaSel, setFechaSel] = useState(
     new Date().toISOString().split("T")[0],
   );
@@ -55,23 +54,18 @@ export default function AdminMasterPanel() {
   const [modalVisible, setModalVisible] = useState(false);
   const [citasManana, setCitasManana] = useState([]);
 
-  // 1. ESCUCHA DE ESPECIALIDADES (Única fuente de verdad)
   useEffect(() => {
     const unsubEsp = onSnapshot(
       query(collection(db, "especialidades"), orderBy("nombre")),
       (snap) => {
         const lista = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setEspecialidades(lista);
-        // Inicializar el filtro de la agenda con la primera especialidad disponible
-        if (lista.length > 0 && !medicoSel) {
-          setMedicoSel(lista[0].nombre);
-        }
+        if (lista.length > 0 && !medicoSel) setMedicoSel(lista[0].nombre);
       },
     );
     return () => unsubEsp();
   }, []);
 
-  // 2. ESCUCHA DE CITAS (Depende de la especialidad seleccionada)
   useEffect(() => {
     if (vistaActual !== "agenda" || !medicoSel) return;
     const q = query(
@@ -85,7 +79,6 @@ export default function AdminMasterPanel() {
     return () => unsubscribe();
   }, [fechaSel, medicoSel, vistaActual]);
 
-  // 3. ESCUCHA DE USUARIOS (LOPDP)
   useEffect(() => {
     if (vistaActual !== "clientes") return;
     const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
@@ -94,7 +87,6 @@ export default function AdminMasterPanel() {
     return () => unsubscribe();
   }, [vistaActual]);
 
-  // --- LÓGICA DE AGENDA ---
   const agendaMap = useMemo(() => {
     const map = {};
     citas.forEach((cita) => {
@@ -132,12 +124,9 @@ export default function AdminMasterPanel() {
   }, [clientes, busqueda]);
 
   const esCumpleHoy = (fechaStr) => {
-    // Verificamos que sea un string y que no esté vacío
     if (!fechaStr || typeof fechaStr !== "string") return false;
-
     const hoy = new Date();
     const mmdd = `${(hoy.getMonth() + 1).toString().padStart(2, "0")}-${hoy.getDate().toString().padStart(2, "0")}`;
-
     return fechaStr.endsWith(mmdd);
   };
 
@@ -199,6 +188,16 @@ export default function AdminMasterPanel() {
     }
   };
 
+  const ajustarMillas = async (userId, cantidad) => {
+    try {
+      await updateDoc(doc(db, "users", userId), {
+        puntosSalud: increment(cantidad),
+      });
+    } catch (e) {
+      Alert.alert("Error", "No se pudieron actualizar las millas.");
+    }
+  };
+
   const prepararConfirmaciones = async () => {
     const manana = new Date();
     manana.setDate(manana.getDate() + 1);
@@ -237,7 +236,6 @@ export default function AdminMasterPanel() {
 
   return (
     <View style={styles.container}>
-      {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <Text style={styles.headerTitle}>333K Master</Text>
@@ -252,7 +250,6 @@ export default function AdminMasterPanel() {
                 color="#25D366"
               />
             </TouchableOpacity>
-
             <TouchableOpacity
               onPress={() => {
                 if (vistaActual === "agenda") setVistaActual("clientes");
@@ -275,7 +272,6 @@ export default function AdminMasterPanel() {
                 color="#fff"
               />
             </TouchableOpacity>
-
             <TouchableOpacity
               onPress={() => signOut(auth).then(() => router.replace("/login"))}
             >
@@ -340,7 +336,6 @@ export default function AdminMasterPanel() {
         )}
       </View>
 
-      {/* CUERPO PRINCIPAL */}
       {vistaActual === "agenda" ? (
         <ScrollView contentContainerStyle={styles.grid}>
           {HORARIOS.map((h) => {
@@ -388,11 +383,11 @@ export default function AdminMasterPanel() {
             data={clientesFiltrados}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.clienteCard}
-                onPress={() => setClienteEdicion(item)}
-              >
-                <View style={styles.cardHeader}>
+              <View style={styles.clienteCard}>
+                <TouchableOpacity
+                  onPress={() => setClienteEdicion(item)}
+                  style={styles.cardHeader}
+                >
                   <View style={{ flex: 1 }}>
                     <Text style={styles.clienteName}>
                       {item.displayName || "Paciente"}
@@ -437,7 +432,42 @@ export default function AdminMasterPanel() {
                       {item.tipoCliente || "PRI"}
                     </Text>
                   </View>
+                </TouchableOpacity>
+
+                {/* SECCIÓN MILLAS CORREGIDA */}
+                <View style={styles.millasContainer}>
+                  <Text style={styles.millasLabel}>Puntos de Salud:</Text>
+                  <View style={styles.millasActions}>
+                    <TouchableOpacity
+                      style={styles.millasBtnMinus}
+                      onPress={() => ajustarMillas(item.id, -1)}
+                    >
+                      <MaterialCommunityIcons
+                        name="minus"
+                        size={18}
+                        color="#FFF"
+                      />
+                    </TouchableOpacity>
+
+                    <View style={styles.millasDisplay}>
+                      <Text style={styles.millasText}>
+                        {item.puntosSalud || 0}
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.millasBtnPlus}
+                      onPress={() => ajustarMillas(item.id, 1)}
+                    >
+                      <MaterialCommunityIcons
+                        name="plus"
+                        size={18}
+                        color="#FFF"
+                      />
+                    </TouchableOpacity>
+                  </View>
                 </View>
+
                 <View style={styles.nivelesRow}>
                   {["PRI", "PRO", "PREMIUM"].map((n) => (
                     <TouchableOpacity
@@ -461,7 +491,7 @@ export default function AdminMasterPanel() {
                     </TouchableOpacity>
                   ))}
                 </View>
-              </TouchableOpacity>
+              </View>
             )}
           />
         </View>
@@ -515,7 +545,6 @@ export default function AdminMasterPanel() {
         </View>
       )}
 
-      {/* FOOTER EDITOR AGENDA (DINÁMICO) */}
       {citaBase && vistaActual === "agenda" && (
         <View style={styles.footerAccion}>
           <Text style={styles.footerText}>
@@ -571,8 +600,10 @@ export default function AdminMasterPanel() {
       <Modal visible={!!clienteEdicion} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Ficha del Paciente</Text>
-            <Text style={styles.label}>Nombre:</Text>
+            <Text style={styles.modalTitle}>
+              Ficha de: {clienteEdicion?.displayName}
+            </Text>
+            <Text style={styles.label}>Nombre Completo:</Text>
             <TextInput
               style={styles.modalInput}
               value={clienteEdicion?.displayName}
@@ -580,7 +611,6 @@ export default function AdminMasterPanel() {
                 setClienteEdicion({ ...clienteEdicion, displayName: t })
               }
             />
-
             <Text style={styles.label}>Fecha Nacimiento (AAAA-MM-DD):</Text>
             <TextInput
               style={styles.modalInput}
@@ -596,7 +626,6 @@ export default function AdminMasterPanel() {
               }}
               maxLength={10}
             />
-
             <TouchableOpacity
               style={styles.btnSendAll}
               onPress={async () => {
@@ -814,6 +843,25 @@ const styles = StyleSheet.create({
   nivelBtnText: { fontSize: 8, color: "#999", fontWeight: "bold" },
   badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 5 },
   badgeText: { color: "#fff", fontSize: 9, fontWeight: "bold" },
+  millasContainer: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#f8f9fa",
+    padding: 8,
+    borderRadius: 10,
+  },
+  millasLabel: { fontSize: 12, fontWeight: "bold", color: "#666" },
+  millasActions: { flexDirection: "row", alignItems: "center" },
+  millasBtnMinus: { backgroundColor: "#FF5252", padding: 5, borderRadius: 5 },
+  millasBtnPlus: {
+    backgroundColor: COLORS.primaryGreen,
+    padding: 5,
+    borderRadius: 5,
+  },
+  millasDisplay: { paddingHorizontal: 15 },
+  millasText: { fontWeight: "bold", fontSize: 16, color: COLORS.darkGreen },
   footerAccion: {
     position: "absolute",
     bottom: 15,
