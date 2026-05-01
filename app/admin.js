@@ -264,7 +264,7 @@ export default function AdminMasterPanel() {
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <Text style={styles.headerTitle}>333K Master</Text>
+          <Text style={styles.headerTitle}>BBBK Master</Text>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <TouchableOpacity
               onPress={prepararConfirmaciones}
@@ -317,7 +317,7 @@ export default function AdminMasterPanel() {
                 <TouchableOpacity
                   key={esp.id}
                   onPress={() => {
-                    setMedicoSel(esp.nombre);
+                    setMedicoSel(esp.nuevoMedico);
                     cancelarSeleccion();
                   }}
                   style={[
