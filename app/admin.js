@@ -10,28 +10,29 @@ import {
   onSnapshot,
   orderBy,
   query,
+  serverTimestamp,
   updateDoc,
-  where
+  where,
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Linking,
-  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { auth, db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
 
 export default function AdminMasterPanel() {
   const router = useRouter();
-  const [vistaActual, setVistaActual] = useState("agenda");
+  const [vistaActual, setVistaActual] = useState("agenda"); // agenda, clientes, especialidades
   const [loading, setLoading] = useState(false);
 
   // --- ESTADOS ---
@@ -43,23 +44,15 @@ export default function AdminMasterPanel() {
   const [citas, setCitas] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [busqueda, setBusqueda] = useState("");
-
-  // Edición Especialidades (Médico + Especialidad)
-  const [nuevoNombreMed, setNuevoNombreMed] = useState("");
-  const [nuevaAreaEsp, setNuevaAreaEsp] = useState("");
-  const [editandoEsp, setEditandoEsp] = useState(null);
-
-  // Edición Agenda & Clientes
   const [citaBase, setCitaBase] = useState(null);
-  const [nuevoMedicoCita, setNuevoMedicoCita] = useState(null);
+  const [nuevoMedico, setNuevoMedico] = useState(null);
   const [seleccionMultiple, setSeleccionMultiple] = useState([]);
+  const [nuevaEsp, setNuevaEsp] = useState("");
   const [clienteEdicion, setClienteEdicion] = useState(null);
-
-  // WhatsApp
   const [modalVisible, setModalVisible] = useState(false);
   const [citasManana, setCitasManana] = useState([]);
 
-  // 1. CARGA DE MÉDICOS Y ESPECIALIDADES
+  // 1. ESCUCHA DE ESPECIALIDADES
   useEffect(() => {
     const unsubEsp = onSnapshot(
       query(collection(db, "especialidades"), orderBy("nombre")),
@@ -72,7 +65,7 @@ export default function AdminMasterPanel() {
     return () => unsubEsp();
   }, []);
 
-  // 2. CARGA DE CITAS
+  // 2. ESCUCHA DE CITAS
   useEffect(() => {
     if (vistaActual !== "agenda" || !medicoSel) return;
     const q = query(
@@ -80,80 +73,70 @@ export default function AdminMasterPanel() {
       where("fecha", "==", fechaSel),
       where("medico", "==", medicoSel),
     );
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setCitas(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    const prepararConfirmaciones = async () => {
+      setLoading(true);
+      try {
+        // Calculamos la fecha de mañana
+        const manana = new Date();
+        manana.setDate(manana.getDate() + 1);
+        const fechaMananaStr = manana.toISOString().split("T")[0];
+
+        // Consultamos las citas pendientes o aprobadas para mañana
+        const q = query(
+          collection(db, "citas"),
+          where("fecha", "==", fechaMananaStr),
+          where("estado", "in", ["pendiente", "aprobado"]),
+        );
+
+        const snapshot = await getDocs(q);
+        const listaCitas = snapshot.docs.map((d) => ({
+          id: d.id,
+          seleccionado: true, // Por defecto marcamos todas para enviar
+          ...d.data(),
+        }));
+
+        if (listaCitas.length === 0) {
+          Alert.alert("Aviso", "No hay citas programadas para mañana.");
+          return;
+        }
+
+        setCitasManana(listaCitas);
+        setModalVisible(true);
+      } catch (error) {
+        console.error("Error al preparar confirmaciones:", error);
+        Alert.alert("Error", "No se pudieron obtener las citas de mañana.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setCitas(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
     return () => unsubscribe();
   }, [fechaSel, medicoSel, vistaActual]);
 
-  // 3. CARGA DE CLIENTES
+  // 3. ESCUCHA DE USUARIOS
   useEffect(() => {
     if (vistaActual !== "clientes") return;
-    const unsubscribe = onSnapshot(collection(db, "users"), (snap) => {
-      setClientes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
+      setClientes(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
     return () => unsubscribe();
   }, [vistaActual]);
 
-  // --- FUNCIONES DE APOYO ---
-  const esCumpleHoy = (fechaStr) => {
-    if (!fechaStr || typeof fechaStr !== "string") return false;
-    const hoy = new Date();
-    const mmdd = `${(hoy.getMonth() + 1).toString().padStart(2, "0")}-${hoy.getDate().toString().padStart(2, "0")}`;
-    return fechaStr.endsWith(mmdd);
-  };
-
-  const enviarConfirmacionWA = async (cita) => {
-    let tel = (cita.telefonoPaciente || "").replace(/\D/g, "");
-    if (tel.startsWith("0")) tel = "593" + tel.substring(1);
-    else if (!tel.startsWith("593")) tel = "593" + tel;
-
-    const msg = `Hola ${cita.nombrePaciente}, le saluda 333K. Confirmamos su cita para el ${cita.fecha} a las ${cita.hora} con ${cita.medico}. ¿Nos confirma su asistencia?`;
-    const url = `whatsapp://send?phone=${tel}&text=${encodeURIComponent(msg)}`;
-
-    try {
-      const puedeAbrir = await Linking.canOpenURL(url);
-      if (puedeAbrir) await Linking.openURL(url);
-      else
-        await Linking.openURL(
-          `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,
-        );
-    } catch (e) {
-      Alert.alert("Error", "No se pudo abrir WhatsApp");
-    }
-  };
-
-  const manejarEspecialidad = async () => {
-    if (!nuevoNombreMed.trim())
-      return Alert.alert("Error", "El nombre del médico es obligatorio");
-    setLoading(true);
-    try {
-      const data = { nombre: nuevoNombreMed.trim(), area: nuevaAreaEsp.trim() };
-      if (editandoEsp) {
-        await updateDoc(doc(db, "especialidades", editandoEsp.id), data);
-        setEditandoEsp(null);
-      } else {
-        await addDoc(collection(db, "especialidades"), data);
-      }
-      setNuevoNombreMed("");
-      setNuevaAreaEsp("");
-    } catch (e) {
-      Alert.alert("Error", "Fallo al guardar");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // --- RENDERIZADO ---
+  // --- LOGICA AGENDA ---
   const agendaMap = useMemo(() => {
     const map = {};
     citas.forEach((cita) => {
       const slots = Math.ceil((cita.duracion || 15) / 15);
       let [h, m] = cita.hora.split(":").map(Number);
       for (let i = 0; i < slots; i++) {
-        const key = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
-        if (!map[key])
+        const currentH = h.toString().padStart(2, "0");
+        const currentM = m.toString().padStart(2, "0");
+        const key = `${currentH}:${currentM}`;
+        if (!map[key]) {
           map[key] = { ...cita, esInicio: i === 0, esContinuacion: i > 0 };
+        }
         m += 15;
         if (m >= 60) {
           h++;
@@ -164,76 +147,196 @@ export default function AdminMasterPanel() {
     return map;
   }, [citas]);
 
-  const HORARIOS = [];
-  for (let h = 8; h < 18; h++) {
-    for (let m = 0; m < 60; m += 15)
-      HORARIOS.push(
-        `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`,
+  const HORARIOS = useMemo(() => {
+    const hours = [];
+    for (let h = 8; h < 18; h++) {
+      for (let m = 0; m < 60; m += 15) {
+        hours.push(
+          `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`,
+        );
+      }
+    }
+    return hours;
+  }, []);
+
+  const clientesFiltrados = useMemo(() => {
+    const term = busqueda.toLowerCase().trim();
+    return clientes.filter(
+      (c) =>
+        (c.displayName || "").toLowerCase().includes(term) ||
+        (c.email || "").toLowerCase().includes(term),
+    );
+  }, [clientes, busqueda]);
+
+  const cancelarSeleccion = () => {
+    setCitaBase(null);
+    setSeleccionMultiple([]);
+    setNuevoMedico(null);
+  };
+
+  const manejarToqueSlot = (hora, info) => {
+    if (citaBase) {
+      if (info && info.id !== citaBase.id) return;
+      setSeleccionMultiple((prev) =>
+        prev.includes(hora)
+          ? prev.filter((h) => h !== hora)
+          : [...prev, hora].sort(),
       );
-  }
+    } else if (info) {
+      setCitaBase(info);
+      setNuevoMedico(info.medico);
+      setSeleccionMultiple([info.hora]);
+    }
+  };
+  const guardarCambiosAgenda = async () => {
+    if (!citaBase || seleccionMultiple.length === 0) return;
+
+    setLoading(true);
+    try {
+      // La primera hora seleccionada será la nueva hora de inicio
+      const nuevaHoraInicio = seleccionMultiple[0];
+
+      // Calculamos la nueva duración basada en cuántos slots de 15 min se seleccionaron
+      // (Ejemplo: 3 slots = 45 minutos)
+      const nuevaDuracion = seleccionMultiple.length * 15;
+
+      const citaRef = doc(db, "citas", citaBase.id);
+
+      await updateDoc(citaRef, {
+        hora: nuevaHoraInicio,
+        duracion: nuevaDuracion,
+        medico: nuevoMedico || citaBase.medico,
+        // Si se mueve de horario, es buena práctica resetear a 'aprobado'
+        // para que el sistema lo trate como una cita confirmada en firme
+        estado: "aprobado",
+        ultimaModificacion: serverTimestamp(),
+      });
+
+      Alert.alert("Éxito", "Agenda actualizada correctamente.");
+      cancelarSeleccion();
+    } catch (error) {
+      console.error("Error al actualizar agenda:", error);
+      Alert.alert(
+        "Error",
+        "No se pudieron guardar los cambios en la base de datos.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+  const finalizarCitaManual = async () => {
+    if (!citaBase?.userId) return Alert.alert("Error", "Sin usuario vinculado");
+    setLoading(true);
+    try {
+      // Registro de actividad LOPDP: Puntos de salud y atención
+      await updateDoc(doc(db, "users", citaBase.userId), {
+        totalCitas: increment(1),
+        puntosSalud: increment(1),
+        ultimaAtencion: serverTimestamp(),
+      });
+      await updateDoc(doc(doc(db, "citas", citaBase.id)), {
+        estado: "finalizada",
+      });
+      Alert.alert("Éxito", "Atención registrada.");
+      cancelarSeleccion();
+    } catch (e) {
+      Alert.alert("Error", "No se pudo finalizar la cita.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const enviarSeleccionados = async () => {
+    const seleccionados = citasManana.filter((c) => c.seleccionado);
+    if (seleccionados.length === 0) return setModalVisible(false);
+
+    for (const cita of seleccionados) {
+      let tel = (cita.telefonoPaciente || "").replace(/\D/g, "");
+      if (tel.startsWith("0")) tel = "593" + tel.substring(1);
+      const msg = `Hola ${cita.nombrePaciente}, confirmamos su cita para mañana a las ${cita.hora}. ¿Nos confirma su asistencia?`;
+      const url = `https://api.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent(msg)}`;
+
+      try {
+        await Linking.openURL(url);
+        // Pequeña pausa para no saturar el sistema de apertura de URLs
+        await new Promise((r) => setTimeout(r, 800));
+      } catch (err) {
+        console.log("Error abriendo WA", err);
+      }
+    }
+    setModalVisible(false);
+  };
 
   return (
     <View style={styles.container}>
-      {/* HEADER DINÁMICO */}
+      {/* HEADER COMPACTO */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <Text style={styles.headerTitle}>333K Master</Text>
-          <View style={{ flexDirection: "row" }}>
+          <Text style={styles.headerTitle}>Agro Redes IA Master</Text>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
             <TouchableOpacity
-              onPress={() => setModalVisible(true)}
+              onPress={prepararConfirmaciones}
               style={styles.iconBtn}
             >
               <MaterialCommunityIcons
                 name="whatsapp"
-                size={26}
+                size={28}
                 color="#25D366"
               />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => {
-                if (vistaActual === "agenda") setVistaActual("clientes");
-                else if (vistaActual === "clientes")
-                  setVistaActual("especialidades");
-                else setVistaActual("agenda");
+                setVistaActual((prev) =>
+                  prev === "agenda"
+                    ? "clientes"
+                    : prev === "clientes"
+                      ? "especialidades"
+                      : "agenda",
+                );
+                cancelarSeleccion();
               }}
               style={styles.iconBtn}
             >
               <MaterialCommunityIcons
                 name={
                   vistaActual === "agenda"
-                    ? "account-heart"
+                    ? "account-group"
                     : vistaActual === "clientes"
-                      ? "stethoscope"
-                      : "calendar-clock"
+                      ? "briefcase-medical"
+                      : "calendar-month"
                 }
-                size={26}
+                size={28}
                 color="#fff"
               />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => signOut(auth).then(() => router.replace("/login"))}
             >
-              <MaterialCommunityIcons name="logout" size={24} color="#fff" />
+              <MaterialCommunityIcons name="power" size={26} color="#fff" />
             </TouchableOpacity>
           </View>
         </View>
 
         {vistaActual === "agenda" && (
-          <View style={{ marginTop: 10 }}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {especialidades.map((e) => (
+          <>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.medicoScroll}
+            >
+              {especialidades.map((esp) => (
                 <TouchableOpacity
-                  key={e.id}
-                  onPress={() => setMedicoSel(e.nombre)}
+                  key={esp.id}
+                  onPress={() => {
+                    setMedicoSel(esp.nombre);
+                    cancelarSeleccion();
+                  }}
                   style={[
                     styles.tab,
-                    medicoSel === e.nombre && styles.tabActive,
+                    medicoSel === esp.nombre && styles.tabActive,
                   ]}
                 >
-                  <Text style={styles.tabText}>{e.nombre}</Text>
-                  {e.area ? (
-                    <Text style={styles.tabSubText}>{e.area}</Text>
-                  ) : null}
+                  <Text style={styles.tabText}>{esp.nombre}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -247,7 +350,7 @@ export default function AdminMasterPanel() {
               >
                 <MaterialCommunityIcons
                   name="chevron-left"
-                  size={30}
+                  size={35}
                   color="#fff"
                 />
               </TouchableOpacity>
@@ -261,16 +364,16 @@ export default function AdminMasterPanel() {
               >
                 <MaterialCommunityIcons
                   name="chevron-right"
-                  size={30}
+                  size={35}
                   color="#fff"
                 />
               </TouchableOpacity>
             </View>
-          </View>
+          </>
         )}
       </View>
 
-      {/* CONTENIDO SEGÚN VISTA */}
+      {/* RENDERIZADO SEGÚN VISTA */}
       {vistaActual === "agenda" ? (
         <ScrollView contentContainerStyle={styles.grid}>
           {HORARIOS.map((h) => {
@@ -279,24 +382,23 @@ export default function AdminMasterPanel() {
             return (
               <TouchableOpacity
                 key={h}
-                onPress={() => {
-                  if (citaBase) {
-                    setSeleccionMultiple((prev) =>
-                      prev.includes(h)
-                        ? prev.filter((x) => x !== h)
-                        : [...prev, h].sort(),
-                    );
-                  } else if (info) {
-                    setCitaBase(info);
-                    setNuevoMedicoCita(info.medico);
-                    setSeleccionMultiple([info.hora]);
-                  }
-                }}
+                onPress={() => manejarToqueSlot(h, info)}
                 style={[
                   styles.slot,
+                  info?.estado === "pendiente" && styles.bgAmarillo,
                   info?.estado === "aprobado" && styles.bgRojo,
+                  info?.estado === "finalizada" && styles.bgGris,
                   estaSel && styles.bgSeleccion,
-                  info?.esContinuacion && { borderTopWidth: 0 },
+                  info?.esContinuacion && {
+                    borderTopWidth: 0,
+                    marginTop: -1,
+                    borderTopLeftRadius: 0,
+                    borderTopRightRadius: 0,
+                  },
+                  info?.esInicio && {
+                    borderBottomLeftRadius: 0,
+                    borderBottomRightRadius: 0,
+                  },
                 ]}
               >
                 <Text
@@ -308,153 +410,111 @@ export default function AdminMasterPanel() {
                   {h}
                 </Text>
                 {info?.esInicio && (
-                  <View style={{ flexDirection: "row", alignItems: "center" }}>
-                    <Text style={styles.pacienteTag}>
-                      {info.nombrePaciente}
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() => enviarConfirmacionWA(info)}
-                    >
-                      <MaterialCommunityIcons
-                        name="whatsapp"
-                        size={12}
-                        color="#25D366"
-                        style={{ marginLeft: 4 }}
-                      />
-                    </TouchableOpacity>
-                  </View>
+                  <Text style={styles.pacienteTag} numberOfLines={1}>
+                    {info.nombrePaciente}
+                  </Text>
                 )}
               </TouchableOpacity>
             );
           })}
         </ScrollView>
       ) : vistaActual === "clientes" ? (
-        <View style={styles.subContainer}>
+        <View style={styles.clientesContainer}>
           <TextInput
             style={styles.searchBar}
-            placeholder="Buscar por nombre..."
+            placeholder="Buscar paciente..."
             value={busqueda}
             onChangeText={setBusqueda}
           />
           <FlatList
-            data={clientes.filter((c) =>
-              (c.displayName || "")
-                .toLowerCase()
-                .includes(busqueda.toLowerCase()),
-            )}
+            data={clientesFiltrados}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <View style={styles.clienteCard}>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <Text style={styles.clienteName}>
-                    {item.displayName || "Usuario"}
-                  </Text>
-                  {esCumpleHoy(item.fechaNacimiento) && (
-                    <MaterialCommunityIcons
-                      name="cake-variant"
-                      size={22}
-                      color="#E91E63"
-                    />
-                  )}
-                </View>
-                <View style={styles.millasRow}>
-                  <Text style={styles.millasText}>
-                    Millas: {item.puntosSalud || 0}
-                  </Text>
-                  <View style={{ flexDirection: "row" }}>
-                    <TouchableOpacity
-                      onPress={() =>
-                        updateDoc(doc(db, "users", item.id), {
-                          puntosSalud: increment(10),
-                        })
-                      }
-                      style={styles.millaBtn}
-                    >
-                      <Text style={styles.millaBtnT}>+10</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => setClienteEdicion(item)}
+              <TouchableOpacity
+                style={styles.clienteCard}
+                onPress={() => setClienteEdicion(item)}
+              >
+                <View style={styles.cardHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.clienteName}>
+                      {item.displayName || "Paciente"}
+                    </Text>
+                    <Text
                       style={[
-                        styles.millaBtn,
-                        { backgroundColor: COLORS.darkGreen },
+                        styles.cardSubText,
+                        {
+                          color: item.fechaNacimiento
+                            ? COLORS.primaryGreen
+                            : "#FF9800",
+                        },
                       ]}
                     >
-                      <MaterialCommunityIcons
-                        name="pencil"
-                        size={14}
-                        color="#fff"
-                      />
-                    </TouchableOpacity>
+                      {item.fechaNacimiento
+                        ? `Nacimiento: ${item.fechaNacimiento}`
+                        : "⚠️ Sin datos LOPDP"}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.badge,
+                      {
+                        backgroundColor:
+                          item.tipoCliente === "PREMIUM"
+                            ? "#D4AF37"
+                            : item.tipoCliente === "PRO"
+                              ? "#C0C0C0"
+                              : "#CD7F32",
+                      },
+                    ]}
+                  >
+                    <Text style={styles.badgeText}>
+                      {item.tipoCliente || "PRI"}
+                    </Text>
                   </View>
                 </View>
-              </View>
+              </TouchableOpacity>
             )}
           />
         </View>
       ) : (
-        <View style={styles.subContainer}>
-          <View style={styles.addForm}>
+        <View style={styles.clientesContainer}>
+          <View style={styles.addArea}>
             <TextInput
-              style={styles.inputSimple}
-              placeholder="Nombre del Médico"
-              value={nuevoNombreMed}
-              onChangeText={setNuevoNombreMed}
-            />
-            <TextInput
-              style={styles.inputSimple}
-              placeholder="Especialidad (opcional)"
-              value={nuevaAreaEsp}
-              onChangeText={setNuevaAreaEsp}
+              placeholder="Nueva especialidad..."
+              style={[styles.searchBar, { flex: 1, marginBottom: 0 }]}
+              value={nuevaEsp}
+              onChangeText={setNuevaEsp}
             />
             <TouchableOpacity
-              onPress={manejarEspecialidad}
-              style={styles.btnGuardarMed}
+              onPress={() => {
+                if (nuevaEsp.trim()) {
+                  addDoc(collection(db, "especialidades"), {
+                    nombre: nuevaEsp.trim(),
+                  });
+                  setNuevaEsp("");
+                }
+              }}
+              style={styles.btnAdd}
             >
-              <Text style={{ color: "#fff", fontWeight: "bold" }}>
-                {editandoEsp ? "ACTUALIZAR" : "AÑADIR MÉDICO"}
-              </Text>
+              <MaterialCommunityIcons name="plus" size={24} color="#FFF" />
             </TouchableOpacity>
           </View>
           <FlatList
             data={especialidades}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <View style={styles.medicoCard}>
-                <View>
-                  <Text style={{ fontWeight: "bold", fontSize: 16 }}>
+              <View style={styles.clienteCard}>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text style={{ flex: 1, fontWeight: "bold" }}>
                     {item.nombre}
                   </Text>
-                  <Text style={{ color: "#666" }}>
-                    {item.area || "General"}
-                  </Text>
-                </View>
-                <View style={{ flexDirection: "row" }}>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setEditandoEsp(item);
-                      setNuevoNombreMed(item.nombre);
-                      setNuevaAreaEsp(item.area || "");
-                    }}
-                    style={{ marginRight: 15 }}
-                  >
-                    <MaterialCommunityIcons
-                      name="pencil"
-                      size={24}
-                      color={COLORS.primaryGreen}
-                    />
-                  </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() =>
                       deleteDoc(doc(db, "especialidades", item.id))
                     }
                   >
                     <MaterialCommunityIcons
-                      name="trash-can"
+                      name="trash-can-outline"
                       size={24}
                       color="#FF5252"
                     />
@@ -466,104 +526,33 @@ export default function AdminMasterPanel() {
         </View>
       )}
 
-      {/* MODAL EDICIÓN CLIENTE */}
-      <Modal visible={!!clienteEdicion} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Ficha Médica</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Nombre"
-              value={clienteEdicion?.displayName}
-              onChangeText={(t) =>
-                setClienteEdicion({ ...clienteEdicion, displayName: t })
-              }
-            />
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Millas"
-              keyboardType="numeric"
-              value={String(clienteEdicion?.puntosSalud || 0)}
-              onChangeText={(t) =>
-                setClienteEdicion({ ...clienteEdicion, puntosSalud: Number(t) })
-              }
-            />
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Cumpleaños (AAAA-MM-DD)"
-              value={clienteEdicion?.fechaNacimiento}
-              onChangeText={(t) =>
-                setClienteEdicion({ ...clienteEdicion, fechaNacimiento: t })
-              }
-            />
-            <TouchableOpacity
-              style={styles.btnAction}
-              onPress={async () => {
-                await updateDoc(doc(db, "users", clienteEdicion.id), {
-                  displayName: clienteEdicion.displayName,
-                  puntosSalud: clienteEdicion.puntosSalud,
-                  fechaNacimiento: clienteEdicion.fechaNacimiento,
-                });
-                setClienteEdicion(null);
-              }}
-            >
-              <Text style={{ color: "#fff", fontWeight: "bold" }}>
-                GUARDAR CAMBIOS
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setClienteEdicion(null)}
-              style={{ marginTop: 15 }}
-            >
-              <Text style={{ textAlign: "center", color: "#999" }}>Cerrar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* FOOTER EDICIÓN AGENDA */}
+      {/* FOOTER ACCIÓN AGENDA */}
       {citaBase && (
-        <View style={styles.footerEdit}>
-          <Text style={{ color: "#fff", fontSize: 12, marginBottom: 5 }}>
-            Mover cita de: {citaBase.nombrePaciente}
+        <View style={styles.footerAccion}>
+          <Text style={styles.footerText}>
+            Paciente: {citaBase.nombrePaciente}
           </Text>
-          <ScrollView horizontal style={{ marginBottom: 10 }}>
-            {especialidades.map((e) => (
-              <TouchableOpacity
-                key={e.id}
-                onPress={() => setNuevoMedicoCita(e.nombre)}
-                style={[
-                  styles.miniTab,
-                  nuevoMedicoCita === e.nombre && styles.miniTabActive,
-                ]}
-              >
-                <Text style={{ color: "#fff", fontSize: 10 }}>{e.nombre}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-          <View
-            style={{ flexDirection: "row", justifyContent: "space-between" }}
-          >
-            <TouchableOpacity
-              onPress={() => setCitaBase(null)}
-              style={styles.btnSec}
-            >
-              <Text style={{ color: "#fff" }}>CANCELAR</Text>
+          <View style={styles.footerButtons}>
+            <TouchableOpacity style={styles.btnCan} onPress={cancelarSeleccion}>
+              <MaterialCommunityIcons name="close" size={24} color="#fff" />
             </TouchableOpacity>
+            {citaBase.estado === "aprobado" && (
+              <TouchableOpacity
+                style={styles.btnFinalizar}
+                onPress={finalizarCitaManual}
+              >
+                <Text style={styles.btnText}>FINALIZAR ATENCIÓN</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
-              onPress={async () => {
-                await updateDoc(doc(db, "citas", citaBase.id), {
-                  hora: seleccionMultiple[0],
-                  duracion: seleccionMultiple.length * 15,
-                  medico: nuevoMedicoCita,
-                });
-                setCitaBase(null);
-              }}
-              style={styles.btnPri}
+              style={styles.btnOk}
+              onPress={guardarCambiosAgenda}
             >
-              <Text style={{ color: "#fff", fontWeight: "bold" }}>
-                CONFIRMAR
-              </Text>
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.btnText}>GUARDAR</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -573,13 +562,14 @@ export default function AdminMasterPanel() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8FAFC" },
+  container: { flex: 1, backgroundColor: "#F4F6F8" },
   header: {
     padding: 20,
     paddingTop: 50,
     backgroundColor: COLORS.darkGreen,
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    elevation: 5,
   },
   headerTop: {
     flexDirection: "row",
@@ -587,25 +577,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerTitle: { color: "#fff", fontSize: 18, fontWeight: "bold" },
-  iconBtn: { marginLeft: 15 },
+  iconBtn: { marginRight: 15 },
+  medicoScroll: { marginTop: 15 },
   tab: {
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 12,
+    borderRadius: 15,
     backgroundColor: "rgba(255,255,255,0.1)",
     marginRight: 8,
-    alignItems: "center",
   },
   tabActive: { backgroundColor: COLORS.primaryGreen },
   tabText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
-  tabSubText: { color: "rgba(255,255,255,0.7)", fontSize: 8 },
   dateNav: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
     marginTop: 10,
   },
-  dateText: { color: "#fff", marginHorizontal: 15, fontWeight: "bold" },
+  dateText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "bold",
+    marginHorizontal: 20,
+  },
   grid: {
     padding: 10,
     flexDirection: "row",
@@ -615,123 +609,97 @@ const styles = StyleSheet.create({
   },
   slot: {
     width: "23%",
-    height: 45,
+    height: 55,
     backgroundColor: "#fff",
     marginBottom: 6,
-    borderRadius: 10,
+    borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#EDEFF2",
   },
-  slotText: { fontSize: 9, color: "#94A3B8" },
-  pacienteTag: { fontSize: 7, color: "#1E293B", fontWeight: "bold" },
-  bgRojo: { backgroundColor: "#FEE2E2", borderColor: "#F87171" },
+  slotText: { fontSize: 9, color: "#B0B5C1" },
+  pacienteTag: {
+    fontSize: 7,
+    color: "#333",
+    fontWeight: "bold",
+    marginTop: 2,
+    textAlign: "center",
+    paddingHorizontal: 2,
+  },
+  bgAmarillo: { backgroundColor: "#FFF9C4" }, // Más suave
+  bgRojo: { backgroundColor: "#FFCDD2" }, // Más suave
+  bgGris: { backgroundColor: "#E0E0E0", opacity: 0.6 },
   bgSeleccion: {
-    backgroundColor: "#DCFCE7",
+    backgroundColor: "#E8F5E9",
     borderColor: COLORS.primaryGreen,
     borderWidth: 2,
   },
-  subContainer: { flex: 1, padding: 15 },
+  clientesContainer: { flex: 1, padding: 15 },
   searchBar: {
     backgroundColor: "#fff",
     padding: 12,
     borderRadius: 12,
     marginBottom: 15,
-    elevation: 1,
+    elevation: 2,
   },
   clienteCard: {
     backgroundColor: "#fff",
     padding: 15,
     borderRadius: 15,
     marginBottom: 10,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.primaryGreen,
+    elevation: 2,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   clienteName: { fontWeight: "bold", fontSize: 15 },
-  millasRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 10,
-  },
-  millaBtn: {
-    backgroundColor: "#F1F5F9",
-    padding: 6,
-    borderRadius: 8,
-    marginLeft: 6,
-  },
-  addForm: {
-    backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 15,
-    marginBottom: 15,
-  },
-  inputSimple: {
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
-    paddingVertical: 8,
-    marginBottom: 10,
-  },
-  btnGuardarMed: {
-    backgroundColor: COLORS.primaryGreen,
-    padding: 12,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  medicoCard: {
-    backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 15,
-    marginBottom: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  footerEdit: {
+  cardSubText: { fontSize: 11, marginTop: 2 },
+  badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 5 },
+  badgeText: { color: "#fff", fontSize: 9, fontWeight: "bold" },
+  footerAccion: {
     position: "absolute",
     bottom: 20,
-    left: 20,
-    right: 20,
+    left: 15,
+    right: 15,
     backgroundColor: COLORS.darkGreen,
-    padding: 15,
     borderRadius: 20,
+    padding: 15,
     elevation: 10,
   },
-  miniTab: {
-    padding: 6,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    marginRight: 5,
-    borderRadius: 6,
+  footerText: { color: "#fff", fontWeight: "bold", fontSize: 12 },
+  footerButtons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 10,
+    alignItems: "center",
   },
-  miniTabActive: { backgroundColor: COLORS.primaryGreen },
-  btnPri: {
+  btnOk: {
     backgroundColor: COLORS.primaryGreen,
-    padding: 10,
-    borderRadius: 10,
-  },
-  btnSec: {
-    backgroundColor: "rgba(255,255,255,0.2)",
-    padding: 10,
-    borderRadius: 10,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    padding: 20,
-  },
-  modalContent: { backgroundColor: "#fff", padding: 25, borderRadius: 25 },
-  modalInput: {
-    backgroundColor: "#F1F5F9",
-    padding: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
     borderRadius: 12,
-    marginBottom: 12,
   },
-  btnAction: {
+  btnFinalizar: {
+    backgroundColor: "#2196F3",
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 12,
+  },
+  btnCan: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    padding: 8,
+    borderRadius: 12,
+  },
+  btnText: { color: "#fff", fontWeight: "bold", fontSize: 10 },
+  addArea: { flexDirection: "row", marginBottom: 20, gap: 10 },
+  btnAdd: {
     backgroundColor: COLORS.primaryGreen,
-    padding: 15,
-    borderRadius: 15,
+    width: 50,
+    borderRadius: 12,
+    justifyContent: "center",
     alignItems: "center",
   },
 });
