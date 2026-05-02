@@ -55,7 +55,7 @@ export default function AdminMasterPanel() {
 
   // --- MODALES ---
   const [modalMedicos, setModalMedicos] = useState(false);
-  const [modalWA, setModalWA] = useState(false);
+  const [modalWA, setModalVisible] = useState(false);
   const [citasManana, setCitasManana] = useState([]);
 
   // Cambiar fecha
@@ -123,8 +123,8 @@ export default function AdminMasterPanel() {
       await Linking.openURL(url);
       await new Promise((r) => setTimeout(r, 1000));
     }
-    
-
+    setModalVisible(false);
+  };
   // 3. Lógica de Edición y Cierre
   const cerrarSesion = () => {
     Alert.alert("Cerrar Sesión", "¿Está seguro?", [
@@ -203,7 +203,10 @@ export default function AdminMasterPanel() {
           <View style={{ flexDirection: "row" }}>
             {/* NUEVO BOTÓN CALENDARIO */}
 
-            <TouchableOpacity onPress={prepararWA} style={styles.iconBtn}>
+            <TouchableOpacity
+              onPress={prepararConfirmaciones}
+              style={styles.iconBtn}
+            >
               <MaterialCommunityIcons
                 name="whatsapp"
                 size={26}
@@ -470,7 +473,7 @@ export default function AdminMasterPanel() {
             />
             <View style={{ marginTop: 10 }}>
               <TouchableOpacity
-                onPress={enviarMasivo}
+                onPress={enviarSeleccionados}
                 style={styles.btnPrimario}
               >
                 <Text style={{ color: "#fff", fontWeight: "bold" }}>
@@ -478,7 +481,7 @@ export default function AdminMasterPanel() {
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => setModalWA(false)}
+                onPress={() => enviarSeleccionados(false)}
                 style={styles.btnSecundario}
               >
                 <Text style={{ color: "#666" }}>Cancelar</Text>
