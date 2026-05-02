@@ -240,7 +240,7 @@ export default function AdminMasterPanel() {
           >
             <MaterialCommunityIcons name="power" size={26} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>BBBK Master Panel</Text>
+          <Text style={styles.headerTitle}>333K Master Panel</Text>
           <View style={{ flexDirection: "row" }}>
             <TouchableOpacity onPress={prepararWA} style={styles.iconBtn}>
               <MaterialCommunityIcons
@@ -454,26 +454,20 @@ export default function AdminMasterPanel() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Citas para Mañana</Text>
-
             <FlatList
               data={citasManana}
-              keyExtractor={(item) => item.id.toString()} // 1. Clave única indispensable
-              contentContainerStyle={{ paddingBottom: 20 }} // Espaciado interno
-              style={{ maxHeight: 400 }} // 2. Evita que el modal se pierda si hay muchas citas
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  onPress={() => {
-                    // 3. Usamos el estado previo para garantizar la actualización
-                    setCitasManana((prevCitas) =>
-                      prevCitas.map((x) =>
+                  onPress={() =>
+                    setCitasManana(
+                      citasManana.map((x) =>
                         x.id === item.id
                           ? { ...x, seleccionado: !x.seleccionado }
                           : x,
                       ),
-                    );
-                  }}
+                    )
+                  }
                   style={styles.waItem}
-                  activeOpacity={0.7} // Feedback visual al tocar
                 >
                   <MaterialCommunityIcons
                     name={
@@ -484,30 +478,23 @@ export default function AdminMasterPanel() {
                     size={24}
                     color={COLORS.primaryGreen}
                   />
-                  <Text style={{ marginLeft: 10, flex: 1 }}>
+                  <Text style={{ marginLeft: 10 }}>
                     {item.hora} - {item.nombrePaciente}
                   </Text>
                 </TouchableOpacity>
               )}
             />
-
-            <View style={{ marginTop: 10 }}>
-              <TouchableOpacity
-                onPress={enviarMasivo}
-                style={styles.btnPrimario}
-              >
-                <Text style={{ color: "#fff", fontWeight: "bold" }}>
-                  ENVIAR WHATSAPP
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => setModalWA(false)}
-                style={styles.btnSecundario}
-              >
-                <Text style={{ color: "#666" }}>Cancelar</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity onPress={enviarMasivo} style={styles.btnPrimario}>
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                ENVIAR WHATSAPP
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setModalWA(false)}
+              style={styles.btnSecundario}
+            >
+              <Text>Cancelar</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
