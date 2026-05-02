@@ -16,6 +16,9 @@
         "backgroundColor": "#FFFFFF"
       },
       "package": "com.juanchavez.bbbk"
-    }
+    },
+    "plugins": [
+      "@react-native-community/datetimepicker"
+    ]
   }
 }
