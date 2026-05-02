@@ -91,39 +91,80 @@ export default function AdminMasterPanel() {
   }, [fechaSel, vistaActual]);
 
   const prepararConfirmaciones = async () => {
-    const manana = new Date();
-    manana.setDate(manana.getDate() + 1);
-    const fechaManana = manana.toISOString().split("T")[0];
+    // Calculamos "mañana" basado en la fecha local actual
+    const hoy = new Date();
+    const manana = new Date(hoy);
+    manana.setDate(hoy.getDate() + 1);
+
+    // Formateo manual YYYY-MM-DD para evitar el desfase de ISOString/UTC
+    const yyyy = manana.getFullYear();
+    const mm = String(manana.getMonth() + 1).padStart(2, "0");
+    const dd = String(manana.getDate()).padStart(2, "0");
+    const fechaBusqueda = `${yyyy}-${mm}-${dd}`;
+
     setLoading(true);
     try {
+      // Importante: Verifica que en Firestore el campo "fecha" sea string "YYYY-MM-DD"
       const q = query(
         collection(db, "citas"),
-        where("fecha", "==", fechaManana),
+        where("fecha", "==", fechaBusqueda),
         where("estado", "==", "aprobado"),
       );
+
       const snap = await getDocs(q);
-      setCitasManana(
-        snap.docs.map((d) => ({ id: d.id, ...d.data(), seleccionado: true })),
-      );
-      setModalVisible(true);
+
+      if (snap.empty) {
+        Alert.alert(
+          "Aviso",
+          `No hay citas aprobadas para la fecha: ${fechaBusqueda}`,
+        );
+        setCitasManana([]);
+      } else {
+        const data = snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+          seleccionado: true,
+        }));
+        setCitasManana(data);
+        setModalVisible(true);
+      }
     } catch (e) {
-      Alert.alert("Error", "Consulta fallida.");
+      console.error(e);
+      Alert.alert("Error", "No se pudo conectar con la base de datos.");
     } finally {
       setLoading(false);
     }
   };
-
   const enviarSeleccionados = async () => {
     const seleccionados = citasManana.filter((c) => c.seleccionado);
+
+    if (seleccionados.length === 0) return;
+
     for (const cita of seleccionados) {
       let tel = (cita.telefonoPaciente || "").replace(/\D/g, "");
-      if (tel.startsWith("0")) tel = "593" + tel.substring(1);
-      const msg = `Hola ${cita.nombrePaciente}, confirmamos su cita para mañana a las ${cita.hora}. ¿Nos confirma su asistencia?`;
-      const url = `https://api.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent(msg)}`;
-      await Linking.openURL(url);
-      await new Promise((r) => setTimeout(r, 1000));
+
+      // Ajuste para el código de país de Ecuador
+      if (tel.startsWith("0")) {
+        tel = "593" + tel.substring(1);
+      } else if (!tel.startsWith("593")) {
+        tel = "593" + tel;
+      }
+
+      const msg = `Hola ${cita.nombrePaciente}, le saluda bbbkodontologia. Confirmamos su cita para mañana a las ${cita.hora}. ¿Nos confirma su asistencia?`;
+
+      // Usamos wa.me que es más universal y ligero
+      const url = `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`;
+
+      try {
+        await Linking.openURL(url);
+        // Damos un tiempo para que la app de WhatsApp procese el envío
+        await new Promise((r) => setTimeout(r, 2000));
+      } catch (err) {
+        console.log("Error al abrir WhatsApp para:", tel);
+      }
     }
     setModalVisible(false);
+    Alert.alert("Proceso completado", "Se han generado las ventanas de envío.");
   };
   // 3. Lógica de Edición y Cierre
   const cerrarSesion = () => {
