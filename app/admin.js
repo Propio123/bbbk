@@ -90,76 +90,40 @@ export default function AdminMasterPanel() {
     });
   }, [fechaSel, vistaActual]);
 
-  // 2. WhatsApp Masivo
-  const prepararWA = async () => {
+  const prepararConfirmaciones = async () => {
     const manana = new Date();
     manana.setDate(manana.getDate() + 1);
-    const fechaM = manana.toISOString().split("T")[0];
+    const fechaManana = manana.toISOString().split("T")[0];
     setLoading(true);
     try {
       const q = query(
         collection(db, "citas"),
-        where("fecha", "==", fechaM),
+        where("fecha", "==", fechaManana),
         where("estado", "==", "aprobado"),
       );
       const snap = await getDocs(q);
-      const data = snap.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-        seleccionado: true,
-      }));
-      setCitasManana(data);
-      if (data.length === 0) Alert.alert("Aviso", "No hay citas para mañana.");
-      else setModalWA(true);
+      setCitasManana(
+        snap.docs.map((d) => ({ id: d.id, ...d.data(), seleccionado: true })),
+      );
+      setModalVisible(true);
     } catch (e) {
-      Alert.alert("Error", "Error al consultar citas.");
+      Alert.alert("Error", "Consulta fallida.");
     } finally {
       setLoading(false);
     }
   };
 
-  const enviarMasivo = async () => {
+  const enviarSeleccionados = async () => {
     const seleccionados = citasManana.filter((c) => c.seleccionado);
-    if (seleccionados.length === 0) {
-      Alert.alert("Aviso", "No hay citas seleccionadas.");
-      return;
-    }
-    setModalWA(false);
-    for (let i = 0; i < seleccionados.length; i++) {
-      const c = seleccionados[i];
-      let tel = (c.telefonoPaciente || "").replace(/\D/g, "");
-      if (tel.startsWith("0")) {
-        tel = "593" + tel.substring(1);
-      } else if (!tel.startsWith("593") && tel.length > 0) {
-        tel = "593" + tel;
-      }
-      const msg = `Hola ${c.nombrePaciente}, confirmamos su cita de ${c.especialidad || "Odontología"} para mañana a las ${c.hora}. ¿Nos confirma su asistencia?`;
-      const url = `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`;
-      await new Promise((resolve) => {
-        Alert.alert(
-          `Envío ${i + 1} de ${seleccionados.length}`,
-          `Enviar recordatorio a ${c.nombrePaciente}?`,
-          [
-            { text: "Saltar", onPress: () => resolve(true), style: "cancel" },
-            {
-              text: "Enviar",
-              onPress: async () => {
-                try {
-                  await Linking.openURL(url);
-                } catch (err) {
-                  Alert.alert("Error", "No se pudo abrir WhatsApp");
-                }
-                resolve(true);
-              },
-            },
-          ],
-          { cancelable: false },
-        );
-      });
+    for (const cita of seleccionados) {
+      let tel = (cita.telefonoPaciente || "").replace(/\D/g, "");
+      if (tel.startsWith("0")) tel = "593" + tel.substring(1);
+      const msg = `Hola ${cita.nombrePaciente}, confirmamos su cita para mañana a las ${cita.hora}. ¿Nos confirma su asistencia?`;
+      const url = `https://api.whatsapp.com/send?phone=${tel}&text=${encodeURIComponent(msg)}`;
+      await Linking.openURL(url);
       await new Promise((r) => setTimeout(r, 1000));
     }
-    Alert.alert("Finalizado", "Se ha recorrido la lista de contactos.");
-  };
+    
 
   // 3. Lógica de Edición y Cierre
   const cerrarSesion = () => {
