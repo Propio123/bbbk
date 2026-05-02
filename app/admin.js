@@ -279,7 +279,35 @@ export default function AdminMasterPanel() {
             </TouchableOpacity>
           </View>
         </View>
-
+        <View style={styles.dateNav}>
+          <TouchableOpacity
+            onPress={() => {
+              const d = new Date(fechaSel + "T12:00:00");
+              d.setDate(d.getDate() - 1);
+              setFechaSel(d.toISOString().split("T")[0]);
+            }}
+          >
+            <MaterialCommunityIcons
+              name="chevron-left"
+              size={35}
+              color="#fff"
+            />
+          </TouchableOpacity>
+          <Text style={styles.dateText}>{fechaSel}</Text>
+          <TouchableOpacity
+            onPress={() => {
+              const d = new Date(fechaSel + "T12:00:00");
+              d.setDate(d.getDate() + 1);
+              setFechaSel(d.toISOString().split("T")[0]);
+            }}
+          >
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={35}
+              color="#fff"
+            />
+          </TouchableOpacity>
+        </View>
         {vistaActual === "agenda" && (
           <View>
             <Text style={styles.fechaTexto}>
