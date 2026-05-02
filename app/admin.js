@@ -236,18 +236,6 @@ export default function AdminMasterPanel() {
           <Text style={styles.headerTitle}>333K Master Panel</Text>
           <View style={{ flexDirection: "row" }}>
             {/* NUEVO BOTÓN CALENDARIO */}
-            {vistaActual === "agenda" && (
-              <TouchableOpacity
-                onPress={() => setShowDatePicker(true)}
-                style={styles.iconBtn}
-              >
-                <MaterialCommunityIcons
-                  name="calendar-search"
-                  size={26}
-                  color="#FFD700"
-                />
-              </TouchableOpacity>
-            )}
 
             <TouchableOpacity onPress={prepararWA} style={styles.iconBtn}>
               <MaterialCommunityIcons
