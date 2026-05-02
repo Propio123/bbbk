@@ -707,6 +707,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
   },
+  dateNav: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 10,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
