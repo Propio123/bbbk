@@ -316,9 +316,7 @@ export default function AdminMasterPanel() {
                   {h}
                 </Text>
                 {info?.esInicio && (
-                  <Text style={styles.pacienteTag}>
-                    {info.displayName || info.nombrePaciente || "Paciente"}
-                  </Text>
+                  <Text style={styles.pacienteTag}>{info.nombrePaciente}</Text>
                 )}
               </TouchableOpacity>
             );
