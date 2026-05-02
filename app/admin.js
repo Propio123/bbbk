@@ -316,7 +316,9 @@ export default function AdminMasterPanel() {
                   {h}
                 </Text>
                 {info?.esInicio && (
-                  <Text style={styles.pacienteTag}>{info.nombrePaciente}</Text>
+                  <Text style={styles.pacienteTag}>
+                    {info.displayName || info.nombrePaciente || "Paciente"}
+                  </Text>
                 )}
               </TouchableOpacity>
             );
@@ -400,7 +402,7 @@ export default function AdminMasterPanel() {
       {citaEnEdicion && (
         <View style={styles.editPanel}>
           <Text style={styles.editPanelTitle}>
-            Paciente: {citaEnEdicion.displayName}
+            Paciente: {citaEnEdicion.nombrePaciente}
           </Text>
           <Text style={styles.label}>
             Reasignar médico para las {citaEnEdicion.hora}:
