@@ -230,7 +230,9 @@ export default function AdminMasterPanel() {
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <TouchableOpacity onPress={cerrarSesion}>
+          <TouchableOpacity
+            onPress={() => signOut(auth).then(() => router.replace("/login"))}
+          >
             <MaterialCommunityIcons name="power" size={26} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>333K Master Panel</Text>
