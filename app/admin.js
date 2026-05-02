@@ -453,20 +453,26 @@ export default function AdminMasterPanel() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Citas para Mañana</Text>
+
             <FlatList
               data={citasManana}
+              keyExtractor={(item) => item.id.toString()} // 1. Clave única indispensable
+              contentContainerStyle={{ paddingBottom: 20 }} // Espaciado interno
+              style={{ maxHeight: 400 }} // 2. Evita que el modal se pierda si hay muchas citas
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  onPress={() =>
-                    setCitasManana(
-                      citasManana.map((x) =>
+                  onPress={() => {
+                    // 3. Usamos el estado previo para garantizar la actualización
+                    setCitasManana((prevCitas) =>
+                      prevCitas.map((x) =>
                         x.id === item.id
                           ? { ...x, seleccionado: !x.seleccionado }
                           : x,
                       ),
-                    )
-                  }
+                    );
+                  }}
                   style={styles.waItem}
+                  activeOpacity={0.7} // Feedback visual al tocar
                 >
                   <MaterialCommunityIcons
                     name={
@@ -477,23 +483,30 @@ export default function AdminMasterPanel() {
                     size={24}
                     color={COLORS.primaryGreen}
                   />
-                  <Text style={{ marginLeft: 10 }}>
+                  <Text style={{ marginLeft: 10, flex: 1 }}>
                     {item.hora} - {item.nombrePaciente}
                   </Text>
                 </TouchableOpacity>
               )}
             />
-            <TouchableOpacity onPress={enviarMasivo} style={styles.btnPrimario}>
-              <Text style={{ color: "#fff", fontWeight: "bold" }}>
-                ENVIAR WHATSAPP
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setModalWA(false)}
-              style={styles.btnSecundario}
-            >
-              <Text>Cancelar</Text>
-            </TouchableOpacity>
+
+            <View style={{ marginTop: 10 }}>
+              <TouchableOpacity
+                onPress={enviarMasivo}
+                style={styles.btnPrimario}
+              >
+                <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                  ENVIAR WHATSAPP
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setModalWA(false)}
+                style={styles.btnSecundario}
+              >
+                <Text style={{ color: "#666" }}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
