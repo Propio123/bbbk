@@ -1,5 +1,4 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import DateTimePicker from "@react-native-community/datetimepicker"; // Asegúrate de tenerlo instalado
 import { useRouter } from "expo-router";
 import { signOut } from "firebase/auth";
 import {
@@ -279,35 +278,7 @@ export default function AdminMasterPanel() {
             </TouchableOpacity>
           </View>
         </View>
-        <View style={styles.dateNav}>
-          <TouchableOpacity
-            onPress={() => {
-              const d = new Date(fechaSel + "T12:00:00");
-              d.setDate(d.getDate() - 1);
-              setFechaSel(d.toISOString().split("T")[0]);
-            }}
-          >
-            <MaterialCommunityIcons
-              name="chevron-left"
-              size={35}
-              color="#fff"
-            />
-          </TouchableOpacity>
-          <Text style={styles.dateText}>{fechaSel}</Text>
-          <TouchableOpacity
-            onPress={() => {
-              const d = new Date(fechaSel + "T12:00:00");
-              d.setDate(d.getDate() + 1);
-              setFechaSel(d.toISOString().split("T")[0]);
-            }}
-          >
-            <MaterialCommunityIcons
-              name="chevron-right"
-              size={35}
-              color="#fff"
-            />
-          </TouchableOpacity>
-        </View>
+
         {vistaActual === "agenda" && (
           <View>
             <Text style={styles.fechaTexto}>
@@ -337,17 +308,27 @@ export default function AdminMasterPanel() {
           </View>
         )}
       </View>
-
-      {/* PICKER DE FECHA */}
-      {showDatePicker && (
-        <DateTimePicker
-          value={fechaObjeto}
-          mode="date"
-          display="default"
-          onChange={onChangeFecha}
-        />
-      )}
-
+      <View style={styles.dateNav}>
+        <TouchableOpacity
+          onPress={() => {
+            const d = new Date(fechaSel + "T12:00:00");
+            d.setDate(d.getDate() - 1);
+            setFechaSel(d.toISOString().split("T")[0]);
+          }}
+        >
+          <MaterialCommunityIcons name="chevron-left" size={35} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.dateText}>{fechaSel}</Text>
+        <TouchableOpacity
+          onPress={() => {
+            const d = new Date(fechaSel + "T12:00:00");
+            d.setDate(d.getDate() + 1);
+            setFechaSel(d.toISOString().split("T")[0]);
+          }}
+        >
+          <MaterialCommunityIcons name="chevron-right" size={35} color="#fff" />
+        </TouchableOpacity>
+      </View>
       {vistaActual === "agenda" ? (
         <ScrollView contentContainerStyle={styles.grid}>
           {HORARIOS.map((h) => {
