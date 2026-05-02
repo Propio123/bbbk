@@ -55,7 +55,7 @@ export default function AdminMasterPanel() {
 
   // --- MODALES ---
   const [modalMedicos, setModalMedicos] = useState(false);
-  const [modalWA, setModalVisible] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
   const [citasManana, setCitasManana] = useState([]);
 
   // Cambiar fecha
@@ -433,28 +433,45 @@ export default function AdminMasterPanel() {
       )}
 
       {/* MODAL WHATSAPP */}
-      <Modal visible={modalWA} transparent animationType="slide">
+      <Modal visible={modalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Citas para Mañana</Text>
+            <Text style={styles.modalTitle}>Confirmaciones de Mañana</Text>
+            <View style={styles.bulkActions}>
+              <TouchableOpacity
+                onPress={() =>
+                  setCitasManana(
+                    citasManana.map((c) => ({ ...c, seleccionado: true })),
+                  )
+                }
+              >
+                <Text style={styles.actionLink}>Todos</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() =>
+                  setCitasManana(
+                    citasManana.map((c) => ({ ...c, seleccionado: false })),
+                  )
+                }
+              >
+                <Text style={styles.actionLink}>Ninguno</Text>
+              </TouchableOpacity>
+            </View>
             <FlatList
               data={citasManana}
-              keyExtractor={(item) => item.id.toString()}
-              contentContainerStyle={{ paddingBottom: 20 }}
-              style={{ maxHeight: 400 }}
+              keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  onPress={() => {
-                    setCitasManana((prevCitas) =>
-                      prevCitas.map((x) =>
-                        x.id === item.id
-                          ? { ...x, seleccionado: !x.seleccionado }
-                          : x,
+                  onPress={() =>
+                    setCitasManana(
+                      citasManana.map((c) =>
+                        c.id === item.id
+                          ? { ...c, seleccionado: !c.seleccionado }
+                          : c,
                       ),
-                    );
-                  }}
+                    )
+                  }
                   style={styles.waItem}
-                  activeOpacity={0.7}
                 >
                   <MaterialCommunityIcons
                     name={
@@ -465,26 +482,27 @@ export default function AdminMasterPanel() {
                     size={24}
                     color={COLORS.primaryGreen}
                   />
-                  <Text style={{ marginLeft: 10, flex: 1 }}>
-                    {item.hora} - {item.nombrePaciente}
-                  </Text>
+                  <View style={{ marginLeft: 10 }}>
+                    <Text style={styles.waName}>{item.nombrePaciente}</Text>
+                    <Text style={styles.waSub}>
+                      {item.hora} - {item.medico}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
               )}
             />
-            <View style={{ marginTop: 10 }}>
+            <View style={styles.modalFooter}>
               <TouchableOpacity
-                onPress={enviarSeleccionados}
-                style={styles.btnPrimario}
+                style={styles.btnCancel}
+                onPress={() => setModalVisible(false)}
               >
-                <Text style={{ color: "#fff", fontWeight: "bold" }}>
-                  ENVIAR WHATSAPP
-                </Text>
+                <Text style={styles.btnTextBlack}>Cerrar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => enviarSeleccionados(false)}
-                style={styles.btnSecundario}
+                style={styles.btnSendAll}
+                onPress={enviarSeleccionados}
               >
-                <Text style={{ color: "#666" }}>Cancelar</Text>
+                <Text style={styles.btnText}>Enviar WhatsApps</Text>
               </TouchableOpacity>
             </View>
           </View>
