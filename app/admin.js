@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker"; // Asegúrate de tenerlo instalado
 import { useRouter } from "expo-router";
 import { signOut } from "firebase/auth";
 import {
@@ -18,6 +19,7 @@ import {
   FlatList,
   Linking,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -37,10 +39,13 @@ export default function AdminMasterPanel() {
   const [listaMedicos, setListaMedicos] = useState([]);
   const [medicoSel, setMedicoSel] = useState("");
 
-  // --- ESTADOS AGENDA Y EDICIÓN ---
+  // --- ESTADOS AGENDA Y NAVEGACIÓN DE FECHA ---
+  const [fechaObjeto, setFechaObjeto] = useState(new Date());
   const [fechaSel, setFechaSel] = useState(
     new Date().toISOString().split("T")[0],
   );
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
   const [citas, setCitas] = useState([]);
   const [citaEnEdicion, setCitaEnEdicion] = useState(null);
   const [nuevoMedicoParaCita, setNuevoMedicoParaCita] = useState("");
@@ -53,6 +58,16 @@ export default function AdminMasterPanel() {
   const [modalMedicos, setModalMedicos] = useState(false);
   const [modalWA, setModalWA] = useState(false);
   const [citasManana, setCitasManana] = useState([]);
+
+  // Cambiar fecha
+  const onChangeFecha = (event, selectedDate) => {
+    setShowDatePicker(Platform.OS === "ios"); // En iOS el picker puede quedarse abierto
+    if (selectedDate) {
+      setFechaObjeto(selectedDate);
+      const isoFecha = selectedDate.toISOString().split("T")[0];
+      setFechaSel(isoFecha);
+    }
+  };
 
   // 1. Listeners de Firebase
   useEffect(() => {
@@ -106,43 +121,27 @@ export default function AdminMasterPanel() {
 
   const enviarMasivo = async () => {
     const seleccionados = citasManana.filter((c) => c.seleccionado);
-
     if (seleccionados.length === 0) {
       Alert.alert("Aviso", "No hay citas seleccionadas.");
       return;
     }
-
-    // Cerramos el modal para que no interfiera con la navegación
     setModalWA(false);
-
-    // Función recursiva o secuencial para enviar uno por uno
     for (let i = 0; i < seleccionados.length; i++) {
       const c = seleccionados[i];
       let tel = (c.telefonoPaciente || "").replace(/\D/g, "");
-
       if (tel.startsWith("0")) {
         tel = "593" + tel.substring(1);
       } else if (!tel.startsWith("593") && tel.length > 0) {
         tel = "593" + tel;
       }
-
       const msg = `Hola ${c.nombrePaciente}, confirmamos su cita de ${c.especialidad || "Odontología"} para mañana a las ${c.hora}. ¿Nos confirma su asistencia?`;
-
-      // Intentar primero con el esquema universal para asegurar compatibilidad
       const url = `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`;
-
-      // Mostramos una alerta para cada mensaje (esto es necesario para que el
-      // sistema operativo permita abrir múltiples URLs externas una tras otra)
       await new Promise((resolve) => {
         Alert.alert(
           `Envío ${i + 1} de ${seleccionados.length}`,
           `Enviar recordatorio a ${c.nombrePaciente}?`,
           [
-            {
-              text: "Saltar",
-              onPress: () => resolve(true),
-              style: "cancel",
-            },
+            { text: "Saltar", onPress: () => resolve(true), style: "cancel" },
             {
               text: "Enviar",
               onPress: async () => {
@@ -158,13 +157,11 @@ export default function AdminMasterPanel() {
           { cancelable: false },
         );
       });
-
-      // Pequeño delay para dar tiempo al sistema a registrar la acción
       await new Promise((r) => setTimeout(r, 1000));
     }
-
     Alert.alert("Finalizado", "Se ha recorrido la lista de contactos.");
   };
+
   // 3. Lógica de Edición y Cierre
   const cerrarSesion = () => {
     Alert.alert("Cerrar Sesión", "¿Está seguro?", [
@@ -234,13 +231,25 @@ export default function AdminMasterPanel() {
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <TouchableOpacity
-            onPress={() => signOut(auth).then(() => router.replace("/login"))}
-          >
+          <TouchableOpacity onPress={cerrarSesion}>
             <MaterialCommunityIcons name="power" size={26} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>333K Master Panel</Text>
           <View style={{ flexDirection: "row" }}>
+            {/* NUEVO BOTÓN CALENDARIO */}
+            {vistaActual === "agenda" && (
+              <TouchableOpacity
+                onPress={() => setShowDatePicker(true)}
+                style={styles.iconBtn}
+              >
+                <MaterialCommunityIcons
+                  name="calendar-search"
+                  size={26}
+                  color="#FFD700"
+                />
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity onPress={prepararWA} style={styles.iconBtn}>
               <MaterialCommunityIcons
                 name="whatsapp"
@@ -272,23 +281,44 @@ export default function AdminMasterPanel() {
         </View>
 
         {vistaActual === "agenda" && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ marginTop: 15 }}
-          >
-            {listaMedicos.map((m) => (
-              <TouchableOpacity
-                key={m.id}
-                onPress={() => setMedicoSel(m.medico)}
-                style={[styles.tab, medicoSel === m.medico && styles.tabActive]}
-              >
-                <Text style={styles.tabText}>{m.nombre}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          <View>
+            <Text style={styles.fechaTexto}>
+              Viendo:{" "}
+              {fechaSel === new Date().toISOString().split("T")[0]
+                ? "Hoy"
+                : fechaSel}
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginTop: 10 }}
+            >
+              {listaMedicos.map((m) => (
+                <TouchableOpacity
+                  key={m.id}
+                  onPress={() => setMedicoSel(m.medico)}
+                  style={[
+                    styles.tab,
+                    medicoSel === m.medico && styles.tabActive,
+                  ]}
+                >
+                  <Text style={styles.tabText}>{m.nombre}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
         )}
       </View>
+
+      {/* PICKER DE FECHA */}
+      {showDatePicker && (
+        <DateTimePicker
+          value={fechaObjeto}
+          mode="date"
+          display="default"
+          onChange={onChangeFecha}
+        />
+      )}
 
       {vistaActual === "agenda" ? (
         <ScrollView contentContainerStyle={styles.grid}>
@@ -344,8 +374,6 @@ export default function AdminMasterPanel() {
                   <Text style={{ fontSize: 10, color: "#666", marginRight: 5 }}>
                     Millas:
                   </Text>
-
-                  {/* INPUT PARA DIGITACIÓN MANUAL */}
                   <TextInput
                     style={styles.millasInput}
                     keyboardType="numeric"
@@ -357,27 +385,17 @@ export default function AdminMasterPanel() {
                       });
                     }}
                   />
-
-                  {/* BOTÓN DECREMENTO */}
                   <TouchableOpacity
                     onPress={() => {
                       const actual = item.puntosSalud || 0;
-                      if (actual >= 10) {
-                        updateDoc(doc(db, "users", item.id), {
-                          puntosSalud: increment(-10),
-                        });
-                      } else {
-                        updateDoc(doc(db, "users", item.id), {
-                          puntosSalud: 0,
-                        });
-                      }
+                      updateDoc(doc(db, "users", item.id), {
+                        puntosSalud: actual >= 10 ? increment(-10) : 0,
+                      });
                     }}
                     style={[styles.btnSmall, { backgroundColor: "#FF5252" }]}
                   >
                     <Text style={styles.btnText}>-10</Text>
                   </TouchableOpacity>
-
-                  {/* BOTÓN INCREMENTO */}
                   <TouchableOpacity
                     onPress={() =>
                       updateDoc(doc(db, "users", item.id), {
@@ -395,7 +413,7 @@ export default function AdminMasterPanel() {
         </View>
       )}
 
-      {/* PANEL EDICIÓN DE CITA (Grid) */}
+      {/* PANEL EDICIÓN DE CITA */}
       {citaEnEdicion && (
         <View style={styles.editPanel}>
           <Text style={styles.editPanelTitle}>
@@ -453,16 +471,14 @@ export default function AdminMasterPanel() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Citas para Mañana</Text>
-
             <FlatList
               data={citasManana}
-              keyExtractor={(item) => item.id.toString()} // 1. Clave única indispensable
-              contentContainerStyle={{ paddingBottom: 20 }} // Espaciado interno
-              style={{ maxHeight: 400 }} // 2. Evita que el modal se pierda si hay muchas citas
+              keyExtractor={(item) => item.id.toString()}
+              contentContainerStyle={{ paddingBottom: 20 }}
+              style={{ maxHeight: 400 }}
               renderItem={({ item }) => (
                 <TouchableOpacity
                   onPress={() => {
-                    // 3. Usamos el estado previo para garantizar la actualización
                     setCitasManana((prevCitas) =>
                       prevCitas.map((x) =>
                         x.id === item.id
@@ -472,7 +488,7 @@ export default function AdminMasterPanel() {
                     );
                   }}
                   style={styles.waItem}
-                  activeOpacity={0.7} // Feedback visual al tocar
+                  activeOpacity={0.7}
                 >
                   <MaterialCommunityIcons
                     name={
@@ -489,7 +505,6 @@ export default function AdminMasterPanel() {
                 </TouchableOpacity>
               )}
             />
-
             <View style={{ marginTop: 10 }}>
               <TouchableOpacity
                 onPress={enviarMasivo}
@@ -499,7 +514,6 @@ export default function AdminMasterPanel() {
                   ENVIAR WHATSAPP
                 </Text>
               </TouchableOpacity>
-
               <TouchableOpacity
                 onPress={() => setModalWA(false)}
                 style={styles.btnSecundario}
@@ -511,7 +525,7 @@ export default function AdminMasterPanel() {
         </View>
       </Modal>
 
-      {/* MODAL MÉDICOS EDITABLES */}
+      {/* MODAL MÉDICOS */}
       <Modal visible={modalMedicos} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -574,6 +588,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerTitle: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+  fechaTexto: { color: "#fff", fontSize: 12, marginTop: 5, opacity: 0.8 },
   iconBtn: { marginLeft: 15 },
   tab: {
     paddingVertical: 8,
