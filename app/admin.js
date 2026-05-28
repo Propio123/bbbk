@@ -5,11 +5,10 @@ import {
   collection,
   doc,
   getDocs,
-  increment,
   onSnapshot,
   query,
   updateDoc,
-  where,
+  where
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -18,16 +17,60 @@ import {
   FlatList,
   Linking,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { auth, db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
+
+// Sub-componente interno optimizado para evitar re-renders masivos al escribir millas
+const ClienteItem = ({ item, onUpdateMillas, onIncrement }) => {
+  const [localMillas, setLocalMillas] = useState(String(item.puntosSalud || 0));
+
+  // Sincronizar si cambia externamente desde el servidor
+  useEffect(() => {
+    setLocalMillas(String(item.puntosSalud || 0));
+  }, [item.puntosSalud]);
+
+  return (
+    <View style={styles.clienteCard}>
+      <Text style={{ fontWeight: "bold", flex: 1 }}>
+        {item.nombre || item.displayName || "Paciente"}
+      </Text>
+      <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <Text style={{ fontSize: 10, color: "#666", marginRight: 5 }}>
+          Millas:
+        </Text>
+        <TextInput
+          style={styles.millasInput}
+          keyboardType="numeric"
+          value={localMillas}
+          onChangeText={setLocalMillas}
+          onEndEditing={() => {
+            const val = Number(localMillas.replace(/[^0-9]/g, ""));
+            onUpdateMillas(item.id, val);
+          }}
+        />
+        <TouchableOpacity
+          onPress={() => onIncrement(item.id, item.puntosSalud, -10)}
+          style={[styles.btnSmall, { backgroundColor: "#FF5252" }]}
+        >
+          <Text style={styles.btnText}>-10</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => onIncrement(item.id, item.puntosSalud, 10)}
+          style={styles.btnSmall}
+        >
+          <Text style={styles.btnText}>+10</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
 
 export default function AdminMasterPanel() {
   const router = useRouter();
@@ -38,12 +81,10 @@ export default function AdminMasterPanel() {
   const [listaMedicos, setListaMedicos] = useState([]);
   const [medicoSel, setMedicoSel] = useState("");
 
-  // --- ESTADOS AGENDA Y NAVEGACIÓN DE FECHA ---
-  const [fechaObjeto, setFechaObjeto] = useState(new Date());
+  // --- ESTADOS AGENDA ---
   const [fechaSel, setFechaSel] = useState(
     new Date().toISOString().split("T")[0],
   );
-  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [citas, setCitas] = useState([]);
   const [citaEnEdicion, setCitaEnEdicion] = useState(null);
@@ -58,17 +99,7 @@ export default function AdminMasterPanel() {
   const [modalVisible, setModalVisible] = useState(false);
   const [citasManana, setCitasManana] = useState([]);
 
-  // Cambiar fecha
-  const onChangeFecha = (event, selectedDate) => {
-    setShowDatePicker(Platform.OS === "ios"); // En iOS el picker puede quedarse abierto
-    if (selectedDate) {
-      setFechaObjeto(selectedDate);
-      const isoFecha = selectedDate.toISOString().split("T")[0];
-      setFechaSel(isoFecha);
-    }
-  };
-
-  // 1. Listeners de Firebase
+  // 1. Listener de Especialidades / Médicos
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "especialidades"), (snap) => {
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -78,25 +109,51 @@ export default function AdminMasterPanel() {
     return () => unsub();
   }, []);
 
+  // 2. Listener de Citas o Clientes (Corregido: Retorna desuscripción explícita)
   useEffect(() => {
     const q =
       vistaActual === "agenda"
         ? query(collection(db, "citas"), where("fecha", "==", fechaSel))
         : query(collection(db, "users"));
 
-    return onSnapshot(q, (snap) => {
+    const unsubData = onSnapshot(q, (snap) => {
       const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      vistaActual === "agenda" ? setCitas(data) : setClientes(data);
+      if (vistaActual === "agenda") {
+        setCitas(data);
+      } else {
+        setClientes(data);
+      }
     });
+
+    return () => unsubData(); // Evita fugas de memoria destruyendo el socket al cambiar de vista
   }, [fechaSel, vistaActual]);
 
+  // Lógica de actualización remota de Puntos/Millas (Corregida)
+  const handleUpdateMillas = async (userId, value) => {
+    try {
+      await updateDoc(doc(db, "users", userId), { puntosSalud: value });
+    } catch (e) {
+      Alert.alert("Error", "No se pudieron actualizar los puntos.");
+    }
+  };
+
+  const handleIncrementMillas = async (userId, puntosActuales, cantidad) => {
+    const actual = puntosActuales || 0;
+    const nuevoValor =
+      cantidad < 0 && actual < Math.abs(cantidad) ? 0 : actual + cantidad;
+
+    try {
+      await updateDoc(doc(db, "users", userId), { puntosSalud: nuevoValor });
+    } catch (e) {
+      Alert.alert("Error", "No se pudo modificar el puntaje.");
+    }
+  };
+
   const prepararConfirmaciones = async () => {
-    // Calculamos "mañana" basado en la fecha local actual
     const hoy = new Date();
     const manana = new Date(hoy);
     manana.setDate(hoy.getDate() + 1);
 
-    // Formateo manual YYYY-MM-DD para evitar el desfase de ISOString/UTC
     const yyyy = manana.getFullYear();
     const mm = String(manana.getMonth() + 1).padStart(2, "0");
     const dd = String(manana.getDate()).padStart(2, "0");
@@ -104,7 +161,6 @@ export default function AdminMasterPanel() {
 
     setLoading(true);
     try {
-      // Importante: Verifica que en Firestore el campo "fecha" sea string "YYYY-MM-DD"
       const q = query(
         collection(db, "citas"),
         where("fecha", "==", fechaBusqueda),
@@ -114,10 +170,7 @@ export default function AdminMasterPanel() {
       const snap = await getDocs(q);
 
       if (snap.empty) {
-        Alert.alert(
-          "Aviso",
-          `No hay citas aprobadas para la fecha: ${fechaBusqueda}`,
-        );
+        Alert.alert("Aviso", `No hay citas aprobadas para: ${fechaBusqueda}`);
         setCitasManana([]);
       } else {
         const data = snap.docs.map((d) => ({
@@ -130,20 +183,21 @@ export default function AdminMasterPanel() {
       }
     } catch (e) {
       console.error(e);
-      Alert.alert("Error", "No se pudo conectar con la base de datos.");
+      Alert.alert("Error", "Error al conectar con Firestore.");
     } finally {
       setLoading(false);
     }
   };
+
   const enviarSeleccionados = async () => {
     const seleccionados = citasManana.filter((c) => c.seleccionado);
-
     if (seleccionados.length === 0) return;
+
+    setModalVisible(false); // Cerramos el modal primero para liberar UI nativa
 
     for (const cita of seleccionados) {
       let tel = (cita.telefonoPaciente || "").replace(/\D/g, "");
 
-      // Ajuste para el código de país de Ecuador
       if (tel.startsWith("0")) {
         tel = "593" + tel.substring(1);
       } else if (!tel.startsWith("593")) {
@@ -151,30 +205,19 @@ export default function AdminMasterPanel() {
       }
 
       const msg = `Hola ${cita.nombrePaciente}, le saluda bbbkodontologia. Confirmamos su cita para mañana a las ${cita.hora}. ¿Nos confirma su asistencia?`;
-
-      // Usamos wa.me que es más universal y ligero
       const url = `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`;
 
       try {
         await Linking.openURL(url);
-        // Damos un tiempo para que la app de WhatsApp procese el envío
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 1500));
       } catch (err) {
         console.log("Error al abrir WhatsApp para:", tel);
       }
     }
-    setModalVisible(false);
-    Alert.alert("Proceso completado", "Se han generado las ventanas de envío.");
-  };
-  // 3. Lógica de Edición y Cierre
-  const cerrarSesion = () => {
-    Alert.alert("Cerrar Sesión", "¿Está seguro?", [
-      { text: "No" },
-      {
-        text: "Sí",
-        onPress: () => signOut(auth).then(() => router.replace("/login")),
-      },
-    ]);
+    Alert.alert(
+      "Proceso completado",
+      "Se abrieron las ventanas de WhatsApp de manera secuencial.",
+    );
   };
 
   const guardarCambioMedico = async () => {
@@ -188,21 +231,27 @@ export default function AdminMasterPanel() {
         c.hora === citaEnEdicion.hora &&
         c.estado !== "finalizado",
     );
-    if (ocupado)
+    if (ocupado) {
       return Alert.alert(
         "Error",
         `El Dr. ${nuevoMedicoParaCita} ya está ocupado a las ${citaEnEdicion.hora}`,
       );
+    }
 
     setLoading(true);
-    await updateDoc(doc(db, "citas", citaEnEdicion.id), {
-      medico: nuevoMedicoParaCita,
-    });
-    setCitaEnEdicion(null);
-    setLoading(false);
+    try {
+      await updateDoc(doc(db, "citas", citaEnEdicion.id), {
+        medico: nuevoMedicoParaCita,
+      });
+      setCitaEnEdicion(null);
+    } catch (e) {
+      Alert.alert("Error", "No se pudo reasignar el médico.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // 4. Mapeo de Grid
+  // Mapeo optimizado de horarios
   const agendaMap = useMemo(() => {
     const map = {};
     citas
@@ -223,16 +272,30 @@ export default function AdminMasterPanel() {
     return map;
   }, [citas, medicoSel]);
 
-  const HORARIOS = [];
-  for (let h = 8; h < 18; h++) {
-    for (let m = 0; m < 60; m += 15)
-      HORARIOS.push(
-        `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`,
-      );
-  }
+  const HORARIOS = useMemo(() => {
+    const list = [];
+    for (let h = 8; h < 18; h++) {
+      for (let m = 0; m < 60; m += 15) {
+        list.push(
+          `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`,
+        );
+      }
+    }
+    return list;
+  }, []);
+
+  // Filtro de búsqueda optimizado para evitar llamadas pesadas en render
+  const clientesFiltrados = useMemo(() => {
+    return clientes.filter((c) =>
+      (c.nombre || c.displayName || "")
+        .toLowerCase()
+        .includes(busqueda.toLowerCase()),
+    );
+  }, [clientes, busqueda]);
 
   return (
     <View style={styles.container}>
+      {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <TouchableOpacity
@@ -242,8 +305,6 @@ export default function AdminMasterPanel() {
           </TouchableOpacity>
           <Text style={styles.headerTitle}>333K Master Panel</Text>
           <View style={{ flexDirection: "row" }}>
-            {/* NUEVO BOTÓN CALENDARIO */}
-
             <TouchableOpacity
               onPress={prepararConfirmaciones}
               style={styles.iconBtn}
@@ -306,6 +367,8 @@ export default function AdminMasterPanel() {
           </View>
         )}
       </View>
+
+      {/* NAVEGADOR DE FECHAS */}
       <View style={styles.dateNav}>
         <TouchableOpacity
           onPress={() => {
@@ -327,6 +390,8 @@ export default function AdminMasterPanel() {
           <MaterialCommunityIcons name="chevron-right" size={35} color="#fff" />
         </TouchableOpacity>
       </View>
+
+      {/* CONTENIDO PRINCIPAL */}
       {vistaActual === "agenda" ? (
         <ScrollView contentContainerStyle={styles.grid}>
           {HORARIOS.map((h) => {
@@ -352,7 +417,9 @@ export default function AdminMasterPanel() {
                   {h}
                 </Text>
                 {info?.esInicio && (
-                  <Text style={styles.pacienteTag}>{info.nombrePaciente}</Text>
+                  <Text style={styles.pacienteTag} numberOfLines={1}>
+                    {info.nombrePaciente}
+                  </Text>
                 )}
               </TouchableOpacity>
             );
@@ -363,58 +430,20 @@ export default function AdminMasterPanel() {
           <TextInput
             placeholder="Buscar cliente..."
             style={styles.searchBar}
+            value={busqueda}
             onChangeText={setBusqueda}
           />
           <FlatList
-            data={clientes.filter((c) =>
-              (c.nombre || c.displayName || "")
-                .toLowerCase()
-                .includes(busqueda.toLowerCase()),
-            )}
+            data={clientesFiltrados}
             keyExtractor={(item) => item.id}
+            initialNumToRender={15}
+            maxToRenderPerBatch={20}
             renderItem={({ item }) => (
-              <View style={styles.clienteCard}>
-                <Text style={{ fontWeight: "bold", flex: 1 }}>
-                  {item.nombre || item.displayName || "Paciente"}
-                </Text>
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Text style={{ fontSize: 10, color: "#666", marginRight: 5 }}>
-                    Millas:
-                  </Text>
-                  <TextInput
-                    style={styles.millasInput}
-                    keyboardType="numeric"
-                    value={String(item.puntosSalud || 0)}
-                    onChangeText={(text) => {
-                      const val = Number(text.replace(/[^0-9]/g, ""));
-                      updateDoc(doc(db, "users", item.id), {
-                        puntosSalud: val,
-                      });
-                    }}
-                  />
-                  <TouchableOpacity
-                    onPress={() => {
-                      const actual = item.puntosSalud || 0;
-                      updateDoc(doc(db, "users", item.id), {
-                        puntosSalud: actual >= 10 ? increment(-10) : 0,
-                      });
-                    }}
-                    style={[styles.btnSmall, { backgroundColor: "#FF5252" }]}
-                  >
-                    <Text style={styles.btnText}>-10</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() =>
-                      updateDoc(doc(db, "users", item.id), {
-                        puntosSalud: increment(10),
-                      })
-                    }
-                    style={styles.btnSmall}
-                  >
-                    <Text style={styles.btnText}>+10</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+              <ClienteItem
+                item={item}
+                onUpdateMillas={handleUpdateMillas}
+                onIncrement={handleIncrementMillas}
+              />
             )}
           />
         </View>
@@ -451,8 +480,8 @@ export default function AdminMasterPanel() {
               <Text style={{ color: "#fff", fontWeight: "bold" }}>GUARDAR</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => {
-                updateDoc(doc(db, "citas", citaEnEdicion.id), {
+              onPress={async () => {
+                await updateDoc(doc(db, "citas", citaEnEdicion.id), {
                   estado: "finalizado",
                 });
                 setCitaEnEdicion(null);
@@ -598,6 +627,7 @@ export default function AdminMasterPanel() {
   );
 }
 
+// ... Mantén tus estilos abajo exactamente igual ...
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F4F6F8" },
   header: {
@@ -729,6 +759,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 10,
   },
+  dateText: {
+    color: "#333",
+    fontSize: 16,
+    fontWeight: "bold",
+    marginHorizontal: 20,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -737,6 +773,12 @@ const styles = StyleSheet.create({
   },
   modalContent: { backgroundColor: "#fff", padding: 20, borderRadius: 25 },
   modalTitle: { fontWeight: "bold", textAlign: "center", marginBottom: 15 },
+  bulkActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  actionLink: { color: COLORS.primaryGreen, fontWeight: "bold" },
   waItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -744,14 +786,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: "#EEE",
   },
-  btnPrimario: {
-    backgroundColor: "#25D366",
-    padding: 15,
-    borderRadius: 15,
-    alignItems: "center",
+  waName: { fontWeight: "bold" },
+  waSub: { fontSize: 12, color: "#666" },
+  modalFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginTop: 15,
   },
-  btnSecundario: { padding: 10, alignItems: "center" },
+  btnTextBlack: { color: "#000", fontWeight: "bold" },
+  btnSendAll: {
+    backgroundColor: "#25D366",
+    padding: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
   inputEdit: { borderBottomWidth: 1, borderColor: "#DDD", paddingVertical: 5 },
   btnClose: {
     backgroundColor: COLORS.darkGreen,

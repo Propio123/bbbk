@@ -1,28 +1,32 @@
 import { Stack, useRouter, useSegments } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, getFirestore } from "firebase/firestore";
 import { useEffect, useState } from "react";
+import { ActivityIndicator, View } from "react-native";
 import { auth, db } from "../src/api/firebase.config";
 
 export default function RootLayout() {
   const [role, setRole] = useState(undefined);
   const [user, setUser] = useState(undefined);
-  const segments = useSegments();
   const router = useRouter();
+  const segments = useSegments();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currUser) => {
       if (currUser) {
-        // Solo buscamos el rol si el usuario existe
         try {
-          const docRef = doc(db, "users", currUser.uid);
+          const firestoreDb = db || getFirestore(auth.app);
+          const docRef = doc(firestoreDb, "users", currUser.uid);
           const docSnap = await getDoc(docRef);
+
           if (docSnap.exists()) {
-            setRole(docSnap.data().rol); // Asegúrate que en Firestore diga "admin" (minúsculas)
+            const datosDelUsuario = docSnap.data();
+            setRole(datosDelUsuario.rol || "paciente");
           } else {
             setRole("paciente");
           }
         } catch (error) {
+          console.error("Error obteniendo rol en RootLayout:", error);
           setRole("paciente");
         }
         setUser(currUser);
@@ -31,39 +35,55 @@ export default function RootLayout() {
         setRole(null);
       }
     });
+
     return unsubscribe;
   }, []);
 
   useEffect(() => {
     if (user === undefined || role === undefined) return;
 
-    // IMPORTANTE: segments[0] puede ser "(admin)" o "admin" dependiendo de tu estructura
     const currentSegment = segments[0];
     const inAuthGroup =
       currentSegment === "login" || currentSegment === "register";
 
     if (!user) {
-      if (!inAuthGroup) router.replace("/login");
+      if (!inAuthGroup) {
+        router.replace("/login");
+      }
     } else {
       if (role === "admin") {
-        // REVISIÓN: Si tu archivo es app/admin.js, el segmento es "admin"
         if (currentSegment !== "admin") {
           router.replace("/admin");
         }
-      } else {
-        // Si no es admin, fuera de las rutas protegidas
-        if (inAuthGroup || currentSegment === "admin") {
+      } else if (role === "paciente") {
+        if (currentSegment === "admin" || inAuthGroup) {
           router.replace("/");
         }
       }
     }
   }, [user, role, segments]);
 
+  if (user === undefined || role === undefined) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "#fff",
+        }}
+      >
+        <ActivityIndicator size="large" color="#0000ff" />
+      </View>
+    );
+  }
+
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
-      <Stack.Screen name="admin" />
       <Stack.Screen name="login" />
+      <Stack.Screen name="register" />
+      <Stack.Screen name="admin" />
     </Stack>
   );
 }

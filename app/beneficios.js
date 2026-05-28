@@ -3,12 +3,12 @@ import { useRouter } from "expo-router";
 import { doc, getDoc, increment, updateDoc } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import {
-    Alert,
-    FlatList,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  FlatList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import { ScreenWrapper } from ".././components/ScreenWrapper";
@@ -92,7 +92,10 @@ const BeneficiosScreen = () => {
                 "Tu cupón ha sido generado. Muéstralo en recepción.",
               );
             } catch (error) {
-              Alert.alert("Error", "No se pudo procesar el canje.");
+              Alert.alert(
+                "Error",
+                "Realiza el canje con el personal de atención al usuario en nuestra clínica",
+              );
             }
           },
         },

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1064558649517",
+    "project_id": "bbk-app-ffdc0",
+    "storage_bucket": "bbk-app-ffdc0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1064558649517:android:de3fe4b9ca1a97b628e624",
+        "android_client_info": {
+          "package_name": "com.juanchavez.bbbk"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBnkwMLyvtgVe-DgTjvU5mJKEWjkp7E3m0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

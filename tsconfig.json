@@ -3,14 +3,12 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "firebase/auth/react-native": [
+        "./node_modules/firebase/auth/dist/rn/index.js"
+      ],
+
+      "@/*": ["./*"]
     }
   },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    "src/screens/Home/HomeScreen.js"
-  ]
+  "include": ["**/*.ts", "**/*.tsx", "src/screens/Home/HomeScreen.js"]
 }

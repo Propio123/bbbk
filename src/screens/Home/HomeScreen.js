@@ -1,8 +1,9 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useNavigationContainerRef } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import { doc, getDoc } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,7 +12,6 @@ import {
 } from "react-native";
 
 import { ScreenWrapper } from "../../../components/ScreenWrapper";
-import { auth, db } from "../../api/firebase.config";
 import { COLORS } from "../../constants/theme";
 
 const MenuButton = ({ icon, label, onPress }) => (
@@ -27,26 +27,53 @@ const MenuButton = ({ icon, label, onPress }) => (
   </TouchableOpacity>
 );
 
-const HomeScreen = () => {
-  const router = useRouter();
-  const [userData, setUserData] = useState(null);
+const HomeScreen = ({ role, userData }) => {
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
-    const checkAdminRedirection = async () => {
-      const user = auth.currentUser;
-      if (user) {
-        const docRef = doc(db, "users", user.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists() && docSnap.data().rol === "admin") {
-          router.replace("/admin");
-        } else if (docSnap.exists()) {
-          setUserData(docSnap.data());
-        }
-      }
-    };
-    checkAdminRedirection();
-  }, []);
+    // Si el rol detectado es admin, disparamos la redirección de forma asíncrona segura
+    if (role === "admin") {
+      setIsRedirecting(true);
 
+      // Enviamos el replace fuera del ciclo síncrono de React
+      // Esto da tiempo a Expo Router de inicializar el árbol de navegación interno
+      const timer = setTimeout(() => {
+        if (router) {
+          router.replace("/admin");
+        }
+      }, 50); // 50ms es imperceptible para el usuario pero vital para el hilo nativo
+
+      return () => clearTimeout(timer);
+    }
+  }, [role, router]);
+
+  // Manejo seguro para las rutas de los botones del cliente (evita cierres por clicks prematuros)
+  const router = useRouter();
+  const rootNavigationRef = useNavigationContainerRef(); // 2. Crea la referencia nativa
+
+  const handleNavigation = (path) => {
+    if (router && role === "paciente") {
+      router.push(path);
+    }
+  };
+
+  // Tu bloque de carga elegante se mantiene exactamente igual 👍
+  if (role === "admin" || !role || isRedirecting) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "#fff",
+        }}
+      >
+        <ActivityIndicator size="large" color={COLORS.primaryGreen} />
+      </View>
+    );
+  }
+
+  // Interfaz limpia e interactiva 100% exclusiva para el Paciente
   return (
     <ScreenWrapper showBack={false}>
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -60,7 +87,7 @@ const HomeScreen = () => {
             <Text style={styles.subtitle}>Tu Clínica Dental Digital</Text>
           </View>
 
-          {/* Panel de Fidelización con puntosSalud y tipoCliente */}
+          {/* Panel de Fidelización */}
           <View style={styles.pointsCard}>
             <View style={styles.pointsHeader}>
               <View style={styles.badgeContainer}>
@@ -90,28 +117,29 @@ const HomeScreen = () => {
               </View>
               <TouchableOpacity
                 style={styles.redeemButton}
-                onPress={() => router.push("/beneficios")}
+                onPress={() => handleNavigation("/beneficios")}
               >
                 <Text style={styles.redeemButtonText}>Canjear</Text>
               </TouchableOpacity>
             </View>
           </View>
 
+          {/* Grillas de Menú sanitizadas */}
           <View style={styles.grid}>
             <MenuButton
               icon="calendar-plus"
               label="AGENDAR CITA"
-              onPress={() => router.push("/agendar")}
+              onPress={() => handleNavigation("/agendar")}
             />
             <MenuButton
               icon="clipboard-text-clock-outline"
               label="MIS CITAS"
-              onPress={() => router.push("/miscitas")}
+              onPress={() => handleNavigation("/miscitas")}
             />
             <MenuButton
               icon="map-marker-radius-outline"
               label="UBICACIÓN"
-              onPress={() => router.push("/ubicacion")}
+              onPress={() => handleNavigation("/ubicacion")}
             />
           </View>
 
@@ -119,17 +147,17 @@ const HomeScreen = () => {
             <MenuButton
               icon="tooth-outline"
               label="SERVICIOS"
-              onPress={() => router.push("/servicios")}
+              onPress={() => handleNavigation("/servicios")}
             />
             <MenuButton
               icon="account-circle-outline"
               label="MI PERFIL"
-              onPress={() => router.push("/perfil")}
+              onPress={() => handleNavigation("/perfil")}
             />
             <MenuButton
               icon="whatsapp"
               label="INFO"
-              onPress={() => router.push("/info")}
+              onPress={() => handleNavigation("/info")}
             />
           </View>
         </View>
@@ -139,10 +167,7 @@ const HomeScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  body: {
-    padding: 20,
-    alignItems: "center",
-  },
+  body: { padding: 20, alignItems: "center" },
   sloganText: {
     color: COLORS.primaryGreen,
     fontSize: 14,
@@ -151,22 +176,14 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     opacity: 0.8,
   },
-  welcomeContainer: {
-    alignItems: "center",
-    marginBottom: 20,
-  },
+  welcomeContainer: { alignItems: "center", marginBottom: 20 },
   welcomeTitle: {
     fontSize: 24,
     color: "#333",
     fontWeight: "bold",
     textAlign: "center",
   },
-  subtitle: {
-    fontSize: 15,
-    color: "#666",
-    marginTop: 5,
-  },
-  // --- Estilos para Puntos Salud ---
+  subtitle: { fontSize: 15, color: "#666", marginTop: 5 },
   pointsCard: {
     backgroundColor: COLORS.darkGreen || "#1A3A34",
     width: "100%",
@@ -210,11 +227,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: 2,
   },
-  pointsValue: {
-    color: "#fff",
-    fontSize: 32,
-    fontWeight: "bold",
-  },
+  pointsValue: { color: "#fff", fontSize: 32, fontWeight: "bold" },
   pointsUnit: {
     fontSize: 16,
     fontWeight: "normal",
@@ -226,21 +239,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 14,
   },
-  redeemButtonText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 14,
-  },
-  // --- Grid ---
+  redeemButtonText: { color: "#fff", fontWeight: "bold", fontSize: 14 },
   grid: {
     flexDirection: "row",
     justifyContent: "space-between",
     width: "100%",
   },
-  menuItem: {
-    alignItems: "center",
-    width: "30%",
-  },
+  menuItem: { alignItems: "center", width: "30%" },
   iconContainer: {
     width: 80,
     height: 80,

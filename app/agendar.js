@@ -163,41 +163,48 @@ const AgendarCitaClient = () => {
   useEffect(() => {
     if (!fechaSel || !servicioSel) return;
 
+    // Ahora consultamos la colección anónima de disponibilidad
     const q = query(
-      collection(db, "citas"),
+      collection(db, "agenda_medica"),
       where("fecha", "==", fechaSel),
       where("medico", "==", servicioSel.medico),
       where("estado", "in", ["pendiente", "confirmada"]),
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const occupied = [];
-      snapshot.docs.forEach((doc) => {
-        const data = doc.data();
-        const numSlots = Math.ceil((data.duracion || 15) / 15);
-        let [h, m] = data.hora.split(":").map(Number);
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const occupied = [];
+        snapshot.docs.forEach((doc) => {
+          const data = doc.data();
+          const numSlots = Math.ceil((data.duracion || 15) / 15);
+          let [h, m] = data.hora.split(":").map(Number);
 
-        for (let i = 0; i < numSlots; i++) {
-          occupied.push(
-            `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`,
-          );
-          m += 15;
-          if (m >= 60) {
-            h++;
-            m = 0;
+          for (let i = 0; i < numSlots; i++) {
+            occupied.push(
+              `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`,
+            );
+            m += 15;
+            if (m >= 60) {
+              h++;
+              m = 0;
+            }
           }
-        }
-      });
-      setBloquesOcupados(occupied);
+        });
+        setBloquesOcupados(occupied);
 
-      if (horaSel && occupied.includes(horaSel)) {
-        setHoraSel(null);
-        Alert.alert(
-          "Aviso",
-          `El horario de las ${horaSel} ya no está disponible para el ${servicioSel.medico}.`,
-        );
-      }
-    });
+        if (horaSel && occupied.includes(horaSel)) {
+          setHoraSel(null);
+          Alert.alert(
+            "Aviso",
+            `El horario de las ${horaSel} ya no está disponible para el ${servicioSel.medico}.`,
+          );
+        }
+      },
+      (error) => {
+        console.error("Error en escucha de agenda:", error);
+      },
+    );
 
     return () => unsubscribe();
   }, [fechaSel, servicioSel]);
@@ -231,16 +238,28 @@ const AgendarCitaClient = () => {
     setLoading(true);
     try {
       const user = auth.currentUser;
-      await addDoc(collection(db, "citas"), {
+
+      // 1. Guardamos la cita detallada (Privada)
+      const docCitaRef = await addDoc(collection(db, "citas"), {
         pacienteId: user.uid,
         nombrePaciente: user.displayName || "Paciente",
         servicio: servicioSel.nombre,
         duracion: servicioSel.duracion,
         fecha: fechaSel,
         hora: horaSel,
-        medico: servicioSel.medico, // Dinámico según el servicio
+        medico: servicioSel.medico,
         estado: "pendiente",
         creadoEn: serverTimestamp(),
+      });
+
+      // 2. Guardamos el bloque de tiempo anónimo (Público para el calendario)
+      await addDoc(collection(db, "agenda_medica"), {
+        citaId: docCitaRef.id, // Vinculamos por si el admin luego la borra/mueve
+        medico: servicioSel.medico,
+        fecha: fechaSel,
+        hora: horaSel,
+        duracion: servicioSel.duracion,
+        estado: "pendiente",
       });
 
       const msg = `🦷 *Nueva Solicitud Cita*\n\nServicio: ${servicioSel.nombre}\nMedico: ${servicioSel.medico}\nFecha: ${fechaSel}\nHora: ${horaSel}`;

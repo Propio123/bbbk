@@ -16,17 +16,17 @@ import {
   View,
 } from "react-native";
 
-// IMPORTANTE: El ScreenWrapper ahora envuelve a todo el contenido
 import { ScreenWrapper } from "../../../components/ScreenWrapper";
 import { auth } from "../../api/firebase.config";
 import { COLORS } from "../../constants/theme";
 
-const LoginScreen = () => {
+// Recibimos la función para cambiar de pantalla de forma segura
+const LoginScreen = ({ onSwitchToRegister }) => {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [verPassword, setVerPassword] = useState(false);
   const [cargando, setCargando] = useState(false);
-  const router = useRouter();
 
   const mostrarNotificacion = (titulo, mensaje) => {
     if (Platform.OS === "web") {
@@ -45,13 +45,23 @@ const LoginScreen = () => {
       return;
     }
     setCargando(true);
+    // Limpieza estricta de correo para evitar fallos de tipeo nativos
+    const emailFormateado = email.trim().toLowerCase();
+
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      await signInWithEmailAndPassword(auth, emailFormateado, password);
     } catch (error) {
-      console.log("Error Firebase:", error.code);
+      console.log("Error Firebase Login:", error.code);
       let mensaje = "Error de conexión.";
-      if (error.code === "auth/invalid-credential")
+      if (
+        error.code === "auth/invalid-credential" ||
+        error.code === "auth/user-not-found" ||
+        error.code === "auth/wrong-password"
+      ) {
         mensaje = "Usuario o contraseña incorrectos.";
+      } else if (error.code === "auth/invalid-email") {
+        mensaje = "El formato del correo no es válido.";
+      }
       mostrarNotificacion("Error de Acceso", mensaje);
     } finally {
       setCargando(false);
@@ -67,15 +77,17 @@ const LoginScreen = () => {
       return;
     }
     try {
-      await sendPasswordResetEmail(auth, email.trim());
+      await sendPasswordResetEmail(auth, email.trim().toLowerCase());
       mostrarNotificacion("Correo Enviado", "Revise su bandeja de entrada.");
     } catch (error) {
-      mostrarNotificacion("Recuperación", "No se pudo enviar el correo.");
+      mostrarNotificacion(
+        "Recuperación",
+        "No se pudo enviar el correo de recuperación.",
+      );
     }
   };
 
   return (
-    // EL SCREENWRAPPER ES EL PADRE DE TODO
     <ScreenWrapper showBack={false}>
       <View style={styles.innerContainer}>
         <Text style={styles.title}>Iniciar Sesión</Text>
@@ -97,6 +109,7 @@ const LoginScreen = () => {
             secureTextEntry={!verPassword}
             value={password}
             onChangeText={setPassword}
+            autoCapitalize="none"
           />
           <TouchableOpacity
             onPress={() => setVerPassword(!verPassword)}
@@ -129,8 +142,17 @@ const LoginScreen = () => {
           )}
         </TouchableOpacity>
 
+        {/* Cambio de pantalla seguro sin empujar rutas rotas */}
         <TouchableOpacity
-          onPress={() => router.push("/register")}
+          onPress={() => {
+            // Si por alguna razón el padre pasa el prop, lo respetamos;
+            // de lo contrario, disparamos la navegación nativa hacia /register
+            if (onSwitchToRegister) {
+              onSwitchToRegister();
+            } else {
+              router.push("/register");
+            }
+          }}
           style={{ marginTop: 25 }}
         >
           <Text style={styles.linkText}>
@@ -144,7 +166,6 @@ const LoginScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  // Eliminamos el container verde porque ya lo tiene el ScreenWrapper
   innerContainer: {
     paddingHorizontal: 25,
     paddingTop: 10,

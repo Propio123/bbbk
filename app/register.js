@@ -198,7 +198,37 @@ const Register = () => {
             <Text style={styles.modalTitle}>Política LOPDP</Text>
             <ScrollView>
               <Text style={styles.legalText}>
-                De conformidad con la Ley Orgánica de Protección de Datos...
+                De conformidad con la Ley Orgánica de Protección de Datos, en
+                virtud de lo establecido en el artículo 8 de la Ley Orgánica de
+                Protección de Datos Personales, otorgo mi consentimiento libre,
+                previo, específico, informado e inequívoco para el tratamiento
+                de mis datos personales. Autorizo expresamente el tratamiento de
+                mis datos personales y datos sensibles, incluyendo información
+                relacionada con mi estado de salud, con las siguientes
+                finalidades: • Prestación de servicios de atención odontológica
+                • Elaboración y gestión de la historia clínica • Diagnóstico y
+                tratamiento médico • Seguimiento clínico • Cumplimiento de
+                obligaciones legales y regulatorias • Notificación de
+                promociones Todo ello en concordancia con el principio de
+                finalidad establecido en la ley. Declaro conocer que mis datos
+                serán tratados bajo estricta confidencialidad y que la
+                institución implementará las medidas de seguridad técnicas y
+                organizativas adecuadas para proteger mi información contra
+                accesos no autorizados, pérdida, alteración o destrucción. He
+                sido informado(a) de que puedo ejercer mis derechos como titular
+                de datos personales conforme a la normativa vigente. Como
+                titular, tengo derecho a acceder, rectificar y actualizar mis
+                datos personales; solicitar su eliminación cuando corresponda;
+                oponerme a su tratamiento; y revocar el consentimiento otorgado,
+                de conformidad con los Arts. 12 al 18 de la Ley Orgánica de
+                Protección de Datos Personales; para ejercer estos derechos,
+                deberé presentar una solicitud en el área de administración de
+                la institución. Asimismo, conozco que mis datos serán
+                conservados únicamente durante el tiempo necesario para cumplir
+                con las finalidades descritas, en cumplimiento del principio de
+                minimización y conservación previsto en el Art. 10, y que no
+                serán comunicados a terceros sin mi autorización, salvo en los
+                casos previstos por la ley, conforme al Art. 33.
               </Text>
             </ScrollView>
             <TouchableOpacity

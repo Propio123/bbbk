@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "333K Odontología",
+    "name": "BBBK Odontología",
     "slug": "bbbk-odontologia",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "scheme": "bbbk-odontologia",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/logo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#8CC63F"
+      "backgroundColor": "#ffffff"
     },
     "android": {
       "adaptiveIcon": {
@@ -17,8 +17,21 @@
       },
       "package": "com.juanchavez.bbbk"
     },
-    "plugins": [
-      "@react-native-community/datetimepicker"
-    ]
+    "plugins": ["@react-native-community/datetimepicker"],
+    "extra": {
+      "eas": {
+        "projectId": "b9aa6e62-3fd1-4dbe-a27a-26a067ce1e01"
+      },
+      "firebaseApiKey": "AIzaSyBnkwMLyvtgVe-DgTjvU5mJKEWjkp7E3m0",
+      "firebaseAuthDomain": "bbk-app-ffdc0.firebaseapp.com",
+      "firebaseProjectId": "bbk-app-ffdc0",
+      "firebaseStorageBucket": "bbk-app-ffdc0.firebasestorage.app",
+      "firebaseMessagingSenderId": "1064558649517",
+      "firebaseAppIdAndroid": "1:1064558649517:android:de3fe4b9ca1a97b628e624",
+      "firebaseAppIdWeb": "1:1064558649517:web:796d25003d41e66c28e624"
+    },
+    "ios": {
+      "bundleIdentifier": "com.juanchavez.bbbk"
+    }
   }
 }
