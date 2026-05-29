@@ -84,20 +84,13 @@ const LoginScreen = ({ onSwitchToRegister }) => {
     try {
       auth.languageCode = "es";
 
-      // 🔐 Configuración de redirección personalizada (Custom Handler)
-      // Esto intercepta el flujo genérico y delega la captura del token a tu web
-      const actionCodeSettings = {
-        url: "https://bbbkodontologia.com/recuperar-clave",
-        handleCodeInApp: false, // Indica que la acción se resuelve en entorno web, no dentro de la APK
-      };
-
-      // Enviamos el correo adjuntando los parámetros de continuidad de dominio
-      await sendPasswordResetEmail(auth, emailLimpio, actionCodeSettings);
+      // 🔄 Retornamos al flujo de inicio estándar de Firebase sin interceptores web personalizados
+      await sendPasswordResetEmail(auth, emailLimpio);
 
       mostrarNotificacion(
         "Correo Enviado",
-        "Hemos enviado un enlace seguro y personalizado para restablecer tu contraseña.\n\n" +
-          "⚠️ IMPORTANTE: Si no lo encuentras en tu bandeja de entrada en un par de minutos, revisa tu carpeta de Correo No Deseado o SPAM. Recuerda utilizar únicamente el último enlace recibido.",
+        "Hemos enviado un enlace seguro para restablecer tu contraseña.\n\n" +
+          "⚠️ IMPORTANTE: Si no lo encuentras en tu bandeja de entrada en un par de minutos, revisa tu carpeta de Correo No Deseado o SPAM.",
       );
     } catch (error) {
       console.log("Error Firebase Recuperación Clave:", error.code);
