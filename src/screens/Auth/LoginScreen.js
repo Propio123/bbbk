@@ -16,7 +16,7 @@ import {
   View,
 } from "react-native";
 
-import { ScreenWrapper } from "../../../components/ScreenWrapper"; // Ajusta los ../ según tu estructura real si es exacta
+import { ScreenWrapper } from "../../../components/ScreenWrapper";
 import { auth } from "../../api/firebase.config";
 import { COLORS } from "../../constants/theme";
 
@@ -48,8 +48,6 @@ const LoginScreen = ({ onSwitchToRegister }) => {
 
     try {
       await signInWithEmailAndPassword(auth, emailFormateado, password);
-      // NOTA: No hace falta router.push aquí. Nuestro index.js detectará el login
-      // de forma automática mediante onAuthStateChanged y cargará el Home.
     } catch (error) {
       console.log("Error Firebase Login:", error.code);
       let mensaje = "Error de conexión.";
@@ -78,17 +76,16 @@ const LoginScreen = ({ onSwitchToRegister }) => {
     }
 
     const emailLimpio = email.trim().toLowerCase();
+    setCargando(true); // Bloqueamos la UI para evitar múltiples clics accidentales
 
     try {
-      // 1. Forzamos a Firebase a utilizar el idioma local de tu cliente
       auth.languageCode = "es";
-
-      // 2. Ejecutamos la solicitud de envío de correo de recuperación
       await sendPasswordResetEmail(auth, emailLimpio);
 
       mostrarNotificacion(
         "Correo Enviado",
-        "Hemos enviado un enlace seguro a su correo electrónico. Abra el enlace para cambiar su contraseña y luego regrese aquí para iniciar sesión.",
+        "Hemos enviado un enlace seguro para restablecer tu contraseña.\n\n" +
+          "⚠️ IMPORTANTE: Si no lo encuentras en tu bandeja de entrada en un par de minutos, revisa tu carpeta de Correo No Deseado o SPAM. Recuerda utilizar el último enlace recibido.",
       );
     } catch (error) {
       console.log("Error Firebase Recuperación Clave:", error.code);
@@ -96,7 +93,6 @@ const LoginScreen = ({ onSwitchToRegister }) => {
       let mensajeError =
         "No se pudo procesar la solicitud de recuperación en este momento.";
 
-      // Control de excepciones comunes en español
       if (error.code === "auth/user-not-found") {
         mensajeError =
           "El correo electrónico ingresado no coincide con ningún paciente registrado en la clínica.";
@@ -109,6 +105,8 @@ const LoginScreen = ({ onSwitchToRegister }) => {
       }
 
       mostrarNotificacion("Recuperación de Cuenta", mensajeError);
+    } finally {
+      setCargando(false); // Liberamos la UI
     }
   };
 
@@ -125,6 +123,7 @@ const LoginScreen = ({ onSwitchToRegister }) => {
           onChangeText={setEmail}
           autoCapitalize="none"
           keyboardType="email-address"
+          disabled={cargando}
         />
 
         <View style={styles.passwordContainer}>
@@ -135,10 +134,12 @@ const LoginScreen = ({ onSwitchToRegister }) => {
             value={password}
             onChangeText={setPassword}
             autoCapitalize="none"
+            disabled={cargando}
           />
           <TouchableOpacity
             onPress={() => setVerPassword(!verPassword)}
             style={styles.eyeIcon}
+            disabled={cargando}
           >
             <MaterialCommunityIcons
               name={verPassword ? "eye-off" : "eye"}
@@ -150,7 +151,8 @@ const LoginScreen = ({ onSwitchToRegister }) => {
 
         <TouchableOpacity
           onPress={handleRecuperarPassword}
-          style={styles.forgotBtn}
+          style={[styles.forgotBtn, cargando && { opacity: 0.5 }]}
+          disabled={cargando}
         >
           <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
         </TouchableOpacity>
@@ -176,6 +178,7 @@ const LoginScreen = ({ onSwitchToRegister }) => {
             }
           }}
           style={{ marginTop: 25 }}
+          disabled={cargando}
         >
           <Text style={styles.linkText}>
             ¿No tienes cuenta?{" "}
@@ -192,8 +195,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 25,
     paddingTop: 10,
     alignItems: "center",
-    width: "100%", // Asegura consistencia en vistas web responsivas
-    maxWidth: 450, // Evita que se deforme en pantallas gigantes de PC
+    width: "100%",
+    maxWidth: 450,
     alignSelf: "center",
   },
   title: {

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import {
   Alert,
   FlatList,
+  Linking, // <-- IMPORTANTE: Asegúrate de tener esta importación
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -35,7 +36,7 @@ const BENEFICIOS_DATA = [
     titulo: "Descuento del 20%",
     puntos: 300,
     icono: "sale",
-    descripcion: "Válido en cualquier tratamiento estético.",
+    descripcion: "Válido en tratamiento general.",
   },
   {
     id: "4",
@@ -43,6 +44,13 @@ const BENEFICIOS_DATA = [
     puntos: 150,
     icono: "brush",
     descripcion: "Cepillo eléctrico y seda dental especial.",
+  },
+  {
+    id: "5",
+    titulo: "Regalos de consumo",
+    puntos: 300,
+    icono: "gift", // Cambiado "plato" por un icono válido estándar de MaterialCommunityIcons
+    descripcion: "Consulta en nuestra clínica mas obsequios",
   },
 ];
 
@@ -64,6 +72,18 @@ const BeneficiosScreen = () => {
     fetchPuntos();
   }, []);
 
+  // Función auxiliar para generar un código de canje único y corto
+  const generarCodigoCanje = () => {
+    const caracteres = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let resultado = "";
+    for (let i = 0; i < 4; i++) {
+      resultado += caracteres.charAt(
+        Math.floor(Math.random() * caracteres.length),
+      );
+    }
+    return `CNJ-${resultado}`;
+  };
+
   const handleCanjear = (beneficio) => {
     if (misPuntos < beneficio.puntos) {
       Alert.alert(
@@ -82,16 +102,52 @@ const BeneficiosScreen = () => {
           text: "Canjear",
           onPress: async () => {
             try {
-              const userRef = doc(db, "users", auth.currentUser.uid);
+              const user = auth.currentUser;
+              let nombrePaciente = "Paciente Registrado";
+
+              // 1. Obtenemos el nombre real desde la colección 'users'
+              if (user) {
+                const userDocRef = doc(db, "users", user.uid);
+                const userDocSnap = await getDoc(userDocRef);
+                if (userDocSnap.exists() && userDocSnap.data()?.nombre) {
+                  nombrePaciente = userDocSnap.data().nombre;
+                } else if (user.displayName) {
+                  nombrePaciente = user.displayName;
+                }
+              }
+
+              // 2. Generamos el código aleatorio de validación
+              const codigoUnico = generarCodigoCanje();
+
+              // 3. Modificación en Firestore (Restamos los puntos con increment negativo)
+              const userRef = doc(db, "users", user.uid);
               await updateDoc(userRef, {
                 puntosSalud: increment(-beneficio.puntos),
               });
+
+              // 4. Actualizamos el estado de la UI localmente
               setMisPuntos((prev) => prev - beneficio.puntos);
+
+              // 5. Estructuramos el mensaje ejecutivo para el administrador de la clínica
+              const msg =
+                `🎁 *Nuevo Canje de Puntos - Clínica Dental*\n\n` +
+                `👤 *Paciente:* ${nombrePaciente}\n` +
+                `🔑 *Código Útil:* *${codigoUnico}*\n` +
+                `✨ *Beneficio:* ${beneficio.titulo}\n` +
+                `📉 *Puntos Redimidos:* ${beneficio.puntos} pts\n\n` +
+                `El saldo ya ha sido debitado en el sistema del paciente. Favor coordinar la entrega del beneficio.`;
+
+              // 6. Lanzamos el canal directo a WhatsApp de forma controlada
+              const urlWhatsApp = `whatsapp://send?phone=593999036517&text=${encodeURIComponent(msg)}`;
+
+              await Linking.openURL(urlWhatsApp);
+
               Alert.alert(
-                "¡Éxito!",
-                "Tu cupón ha sido generado. Muéstralo en recepción.",
+                "¡Canje Exitoso!",
+                `Código: ${codigoUnico}\n\nLos puntos se han descontado. Se ha abierto WhatsApp para notificar a la administración de tu beneficio.`,
               );
             } catch (error) {
+              console.error("Error en proceso de canje: ", error);
               Alert.alert(
                 "Error",
                 "Realiza el canje con el personal de atención al usuario en nuestra clínica",
@@ -132,6 +188,7 @@ const BeneficiosScreen = () => {
         <TouchableOpacity
           style={[styles.btnCanjear, !puedeCanjear && styles.btnDisabled]}
           onPress={() => handleCanjear(item)}
+          disabled={!puedeCanjear}
         >
           <Text style={styles.btnText}>
             {puedeCanjear ? "Canjear" : "Faltan pts"}

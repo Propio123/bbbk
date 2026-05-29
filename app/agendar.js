@@ -84,7 +84,7 @@ const SERVICIOS = [
     id: "ort",
     nombre: "Ortodoncia",
     duracion: 30,
-    medico: "Dr. Bladimir Denavidez",
+    medico: "Dr. Bladimir Benavidez",
     img: {
       uri: "https://www.clinicadentallarranaga.com/wp-content/uploads/que_es_una_ortodoncia.jpg",
     },
