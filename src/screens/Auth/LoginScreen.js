@@ -83,11 +83,20 @@ const LoginScreen = ({ onSwitchToRegister }) => {
 
     try {
       auth.languageCode = "es";
-      await sendPasswordResetEmail(auth, emailLimpio);
+
+      // 🔐 Configuración de redirección personalizada (Custom Handler)
+      // Esto intercepta el flujo genérico y delega la captura del token a tu web
+      const actionCodeSettings = {
+        url: "https://bbbkodontologia.com/recuperar-clave",
+        handleCodeInApp: false, // Indica que la acción se resuelve en entorno web, no dentro de la APK
+      };
+
+      // Enviamos el correo adjuntando los parámetros de continuidad de dominio
+      await sendPasswordResetEmail(auth, emailLimpio, actionCodeSettings);
 
       mostrarNotificacion(
         "Correo Enviado",
-        "Hemos enviado un enlace seguro para restablecer tu contraseña.\n\n" +
+        "Hemos enviado un enlace seguro y personalizado para restablecer tu contraseña.\n\n" +
           "⚠️ IMPORTANTE: Si no lo encuentras en tu bandeja de entrada en un par de minutos, revisa tu carpeta de Correo No Deseado o SPAM. Recuerda utilizar únicamente el último enlace recibido.",
       );
     } catch (error) {
@@ -126,7 +135,7 @@ const LoginScreen = ({ onSwitchToRegister }) => {
           onChangeText={setEmail}
           autoCapitalize="none"
           keyboardType="email-address"
-          editable={!cargando} // <-- CORREGIDO: Bloquea interacción real en el dispositivo
+          editable={!cargando}
         />
 
         <View style={styles.passwordContainer}>
@@ -137,7 +146,7 @@ const LoginScreen = ({ onSwitchToRegister }) => {
             value={password}
             onChangeText={setPassword}
             autoCapitalize="none"
-            editable={!cargando} // <-- CORREGIDO: Bloquea interacción real en el dispositivo
+            editable={!cargando}
           />
           <TouchableOpacity
             onPress={() => setVerPassword(!verPassword)}
