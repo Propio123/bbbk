@@ -15,8 +15,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { auth, db } from "../../api/firebase.config"; // Asegura que la ruta relativa sea correcta
-import { COLORS } from "../../constants/theme";
+import { auth, db } from "../src/api/firebase.config"; // Asegura que la ruta relativa sea correcta
+import { COLORS } from "../src/constants/theme";
 
 const Register = () => {
   const router = useRouter();
