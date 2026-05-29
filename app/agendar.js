@@ -242,19 +242,48 @@ const AgendarCitaClient = () => {
     return slots;
   }, [fechaSel, bloquesOcupados]);
 
+  // Asegúrate de importar "doc" y "getDoc" de firestore arriba en tus imports:
+  // import { addDoc, collection, onSnapshot, query, serverTimestamp, where, doc, getDoc } from "firebase/firestore";
+
   const enviarSolicitud = async () => {
     if (!estaListo) return;
     setLoading(true);
     try {
       const user = auth.currentUser;
+      let nombreRealPaciente = "Paciente Registrado";
 
-      // Identificamos el nombre que usará el mensaje de WhatsApp
-      const nombreParaMensaje = user?.displayName || "Paciente Registrado";
+      // 1. Buscamos el nombre real del paciente en la colección de usuarios de Firestore
+      if (user) {
+        try {
+          // Ajusta "usuarios" por el nombre exacto de tu colección (ej. "pacientes" o "users")
+          const userDocRef = doc(db, "usuarios", user.uid);
+          const userDocSnap = await getDoc(userDocRef);
 
-      // 1. Guardamos la cita detallada (Privada)
+          if (userDocSnap.exists()) {
+            const userData = userDocSnap.data();
+            // Validamos cómo tienes estructurado el nombre en tu base de datos
+            nombreRealPaciente =
+              userData.nombreCompleto ||
+              `${userData.primerNombre || ""} ${userData.primerApellido || ""}`.trim() ||
+              userData.nombre ||
+              user.displayName ||
+              "Paciente Registrado";
+          } else if (user.displayName) {
+            nombreRealPaciente = user.displayName;
+          }
+        } catch (errSnap) {
+          console.log(
+            "No se pudo obtener el perfil de Firestore, usando fallback:",
+            errSnap,
+          );
+          if (user.displayName) nombreRealPaciente = user.displayName;
+        }
+      }
+
+      // 2. Guardamos la cita detallada (Privada) en Firestore
       const docCitaRef = await addDoc(collection(db, "citas"), {
         pacienteId: user.uid,
-        nombrePaciente: nombreParaMensaje,
+        nombrePaciente: nombreRealPaciente, // Guardamos el nombre real recuperado
         servicio: servicioSel.nombre,
         duracion: servicioSel.duracion,
         fecha: fechaSel,
@@ -264,9 +293,9 @@ const AgendarCitaClient = () => {
         creadoEn: serverTimestamp(),
       });
 
-      // 2. Guardamos el bloque de tiempo anónimo (Público para el calendario)
+      // 3. Guardamos el bloque de tiempo anónimo (Público para el calendario)
       await addDoc(collection(db, "agenda_medica"), {
-        citaId: docCitaRef.id, // Vinculamos por si el admin luego la borra/mueve
+        citaId: docCitaRef.id,
         medico: servicioSel.medico,
         fecha: fechaSel,
         hora: horaSel,
@@ -274,17 +303,17 @@ const AgendarCitaClient = () => {
         estado: "pendiente",
       });
 
-      // 3. Construimos el mensaje incluyendo el nombre del paciente en negritas (*Nombre*)
+      // 4. Construimos el mensaje incluyendo el nombre real obtenido
       const msg =
         `🦷 *Nueva Solicitud de Cita*\n\n` +
-        `👤 *Paciente:* ${nombreParaMensaje}\n` +
+        `👤 *Paciente:* ${nombreRealPaciente}\n` +
         `✨ *Servicio:* ${servicioSel.nombre}\n` +
         `👨‍⚕️ *Médico:* ${servicioSel.medico}\n` +
         `🗓️ *Fecha:* ${fechaSel}\n` +
         `⏰ *Hora:* ${horaSel}\n\n` +
         `Por favor, confirmar disponibilidad. ¡Muchas gracias!`;
 
-      // 4. Disparamos la apertura de WhatsApp
+      // 5. Disparamos la apertura de WhatsApp
       await Linking.openURL(
         `whatsapp://send?phone=593999036517&text=${encodeURIComponent(msg)}`,
       );
