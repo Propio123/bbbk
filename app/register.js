@@ -55,13 +55,24 @@ const Register = () => {
     }
   };
 
+  // Función auxiliar universal para mostrar alertas tanto en Web como en APK
+  const mostrarAlerta = (titulo, mensaje) => {
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined") {
+        window.alert(`${titulo}\n\n${mensaje}`);
+      }
+    } else {
+      Alert.alert(titulo, mensaje);
+    }
+  };
+
   const handleRegister = async () => {
     const { email, password, nombreCompleto, telefono, fechaNacimiento } =
       formData;
 
     // 1. Validaciones Básicas de Campos Vacíos
     if (!email || !password || !nombreCompleto || !fechaSeleccionada) {
-      Alert.alert(
+      mostrarAlerta(
         "Campos incompletos",
         "Por favor completa todos los datos, incluyendo tu fecha de nacimiento.",
       );
@@ -73,7 +84,7 @@ const Register = () => {
     const palabras = limpio.split(" ");
 
     if (palabras.length !== 4) {
-      Alert.alert(
+      mostrarAlerta(
         "Formato de Nombre Inválido",
         "Por favor, ingresa estrictamente tus dos nombres y tus dos apellidos (ej: Juan Carlos Pérez Castro).",
       );
@@ -81,7 +92,7 @@ const Register = () => {
     }
 
     if (!aceptaTerminos) {
-      Alert.alert(
+      mostrarAlerta(
         "LOPDP",
         "Debes aceptar el tratamiento de datos para continuar.",
       );
@@ -128,30 +139,38 @@ const Register = () => {
         fechaRegistro: new Date().toISOString(),
       });
 
-      Alert.alert("¡Éxito!", "Cuenta creada correctamente.");
+      mostrarAlerta("¡Éxito!", "Cuenta creada correctamente.");
       router.replace("/");
     } catch (error) {
-      console.error("Error completo en el registro: ", error);
+      console.error("Error completo capturado en registro: ", error);
 
-      // 🔍 CAPTURA Y CONTROL DE CORREO DUPLICADO
-      if (error.code === "auth/email-already-in-use") {
-        Alert.alert(
+      // 🔍 CAPTURA Y CONTROL DE ERRORES DE FIREBASE COMPATIBLE CON WEB Y APK
+      const errorCode =
+        error.code ||
+        (error.message && error.message.includes("email-already-in-use")
+          ? "auth/email-already-in-use"
+          : "");
+
+      if (
+        errorCode === "auth/email-already-in-use" ||
+        error.message?.includes("email-already-in-use")
+      ) {
+        mostrarAlerta(
           "Correo ya registrado",
           "Este correo electrónico ya se encuentra vinculado a una cuenta en la clínica. Si olvidaste tu contraseña, por favor regresa a la pantalla de inicio para restablecerla o inicia sesión.",
         );
-      } else if (error.code === "auth/invalid-email") {
-        Alert.alert(
+      } else if (errorCode === "auth/invalid-email") {
+        mostrarAlerta(
           "Correo inválido",
           "La dirección de correo electrónico no tiene un formato válido (ejemplo@dominio.com).",
         );
-      } else if (error.code === "auth/weak-password") {
-        Alert.alert(
+      } else if (errorCode === "auth/weak-password") {
+        mostrarAlerta(
           "Contraseña débil",
           "La contraseña debe tener un mínimo de 6 caracteres.",
         );
       } else {
-        // Alerta de respaldo por si ocurre otro error de red o Firebase
-        Alert.alert(
+        mostrarAlerta(
           "No se pudo completar el registro",
           "Ocurrió un error inesperado. Por favor, inténtalo de nuevo más tarde.",
         );
