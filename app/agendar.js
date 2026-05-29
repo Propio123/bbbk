@@ -144,7 +144,7 @@ const SERVICIOS = [
     },
   },
   {
-    id: "adop",
+    id: "rx",
     nombre: "Rayos X",
     duracion: 60,
     medico: "Dra. Sofía Benavides",
