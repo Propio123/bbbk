@@ -36,6 +36,7 @@ const LoginScreen = ({ onSwitchToRegister }) => {
   };
 
   const handleLogin = async () => {
+    if (cargando) return; // Freno de seguridad
     if (!email || !password) {
       mostrarNotificacion(
         "Campos Requeridos",
@@ -67,6 +68,8 @@ const LoginScreen = ({ onSwitchToRegister }) => {
   };
 
   const handleRecuperarPassword = async () => {
+    if (cargando) return; // Evita ejecuciones paralelas si hay doble clic veloz
+
     if (!email) {
       mostrarNotificacion(
         "Dato Necesario",
@@ -76,7 +79,7 @@ const LoginScreen = ({ onSwitchToRegister }) => {
     }
 
     const emailLimpio = email.trim().toLowerCase();
-    setCargando(true); // Bloqueamos la UI para evitar múltiples clics accidentales
+    setCargando(true);
 
     try {
       auth.languageCode = "es";
@@ -85,7 +88,7 @@ const LoginScreen = ({ onSwitchToRegister }) => {
       mostrarNotificacion(
         "Correo Enviado",
         "Hemos enviado un enlace seguro para restablecer tu contraseña.\n\n" +
-          "⚠️ IMPORTANTE: Si no lo encuentras en tu bandeja de entrada en un par de minutos, revisa tu carpeta de Correo No Deseado o SPAM. Recuerda utilizar el último enlace recibido.",
+          "⚠️ IMPORTANTE: Si no lo encuentras en tu bandeja de entrada en un par de minutos, revisa tu carpeta de Correo No Deseado o SPAM. Recuerda utilizar únicamente el último enlace recibido.",
       );
     } catch (error) {
       console.log("Error Firebase Recuperación Clave:", error.code);
@@ -106,7 +109,7 @@ const LoginScreen = ({ onSwitchToRegister }) => {
 
       mostrarNotificacion("Recuperación de Cuenta", mensajeError);
     } finally {
-      setCargando(false); // Liberamos la UI
+      setCargando(false);
     }
   };
 
@@ -123,7 +126,7 @@ const LoginScreen = ({ onSwitchToRegister }) => {
           onChangeText={setEmail}
           autoCapitalize="none"
           keyboardType="email-address"
-          disabled={cargando}
+          editable={!cargando} // <-- CORREGIDO: Bloquea interacción real en el dispositivo
         />
 
         <View style={styles.passwordContainer}>
@@ -134,7 +137,7 @@ const LoginScreen = ({ onSwitchToRegister }) => {
             value={password}
             onChangeText={setPassword}
             autoCapitalize="none"
-            disabled={cargando}
+            editable={!cargando} // <-- CORREGIDO: Bloquea interacción real en el dispositivo
           />
           <TouchableOpacity
             onPress={() => setVerPassword(!verPassword)}
