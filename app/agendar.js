@@ -248,10 +248,13 @@ const AgendarCitaClient = () => {
     try {
       const user = auth.currentUser;
 
+      // Identificamos el nombre que usará el mensaje de WhatsApp
+      const nombreParaMensaje = user?.displayName || "Paciente Registrado";
+
       // 1. Guardamos la cita detallada (Privada)
       const docCitaRef = await addDoc(collection(db, "citas"), {
         pacienteId: user.uid,
-        nombrePaciente: user.displayName || "Paciente",
+        nombrePaciente: nombreParaMensaje,
         servicio: servicioSel.nombre,
         duracion: servicioSel.duracion,
         fecha: fechaSel,
@@ -271,7 +274,17 @@ const AgendarCitaClient = () => {
         estado: "pendiente",
       });
 
-      const msg = `🦷 *Nueva Solicitud Cita*\n\nServicio: ${servicioSel.nombre}\nMedico: ${servicioSel.medico}\nFecha: ${fechaSel}\nHora: ${horaSel}`;
+      // 3. Construimos el mensaje incluyendo el nombre del paciente en negritas (*Nombre*)
+      const msg =
+        `🦷 *Nueva Solicitud de Cita*\n\n` +
+        `👤 *Paciente:* ${nombreParaMensaje}\n` +
+        `✨ *Servicio:* ${servicioSel.nombre}\n` +
+        `👨‍⚕️ *Médico:* ${servicioSel.medico}\n` +
+        `🗓️ *Fecha:* ${fechaSel}\n` +
+        `⏰ *Hora:* ${horaSel}\n\n` +
+        `Por favor, confirmar disponibilidad. ¡Muchas gracias!`;
+
+      // 4. Disparamos la apertura de WhatsApp
       await Linking.openURL(
         `whatsapp://send?phone=593999036517&text=${encodeURIComponent(msg)}`,
       );
