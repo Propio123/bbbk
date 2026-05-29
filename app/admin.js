@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useRouter } from "expo-router";
 import { signOut } from "firebase/auth";
 import {
@@ -8,7 +9,7 @@ import {
   onSnapshot,
   query,
   updateDoc,
-  where
+  where,
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -17,12 +18,13 @@ import {
   FlatList,
   Linking,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { auth, db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
@@ -31,7 +33,6 @@ import { COLORS } from "../src/constants/theme";
 const ClienteItem = ({ item, onUpdateMillas, onIncrement }) => {
   const [localMillas, setLocalMillas] = useState(String(item.puntosSalud || 0));
 
-  // Sincronizar si cambia externamente desde el servidor
   useEffect(() => {
     setLocalMillas(String(item.puntosSalud || 0));
   }, [item.puntosSalud]);
@@ -85,6 +86,7 @@ export default function AdminMasterPanel() {
   const [fechaSel, setFechaSel] = useState(
     new Date().toISOString().split("T")[0],
   );
+  const [mostrarCalendario, setMostrarCalendario] = useState(false);
 
   const [citas, setCitas] = useState([]);
   const [citaEnEdicion, setCitaEnEdicion] = useState(null);
@@ -109,7 +111,7 @@ export default function AdminMasterPanel() {
     return () => unsub();
   }, []);
 
-  // 2. Listener de Citas o Clientes (Corregido: Retorna desuscripción explícita)
+  // 2. Listener de Citas o Clientes
   useEffect(() => {
     const q =
       vistaActual === "agenda"
@@ -125,10 +127,9 @@ export default function AdminMasterPanel() {
       }
     });
 
-    return () => unsubData(); // Evita fugas de memoria destruyendo el socket al cambiar de vista
+    return () => unsubData();
   }, [fechaSel, vistaActual]);
 
-  // Lógica de actualización remota de Puntos/Millas (Corregida)
   const handleUpdateMillas = async (userId, value) => {
     try {
       await updateDoc(doc(db, "users", userId), { puntosSalud: value });
@@ -193,10 +194,13 @@ export default function AdminMasterPanel() {
     const seleccionados = citasManana.filter((c) => c.seleccionado);
     if (seleccionados.length === 0) return;
 
-    setModalVisible(false); // Cerramos el modal primero para liberar UI nativa
+    setModalVisible(false);
 
     for (const cita of seleccionados) {
-      let tel = (cita.telefonoPaciente || "").replace(/\D/g, "");
+      let tel = (cita.telefonoPaciente || cita.pacienteTelefono || "").replace(
+        /\D/g,
+        "",
+      );
 
       if (tel.startsWith("0")) {
         tel = "593" + tel.substring(1);
@@ -204,7 +208,7 @@ export default function AdminMasterPanel() {
         tel = "593" + tel;
       }
 
-      const msg = `Hola ${cita.nombrePaciente}, le saluda bbbkodontologia. Confirmamos su cita para mañana a las ${cita.hora}. ¿Nos confirma su asistencia?`;
+      const msg = `Hola ${cita.nombrePaciente || cita.pacienteNombre}, le saluda bbbkodontologia. Confirmamos su cita para mañana a las ${cita.hora}. ¿Nos confirma su asistencia?`;
       const url = `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`;
 
       try {
@@ -251,7 +255,17 @@ export default function AdminMasterPanel() {
     }
   };
 
-  // Mapeo optimizado de horarios
+  // Manejador del cambio de fecha desde el calendario nativo
+  const onDateChange = (event, selectedDate) => {
+    setMostrarCalendario(Platform.OS === "ios");
+    if (selectedDate) {
+      const yyyy = selectedDate.getFullYear();
+      const mm = String(selectedDate.getMonth() + 1).padStart(2, "0");
+      const dd = String(selectedDate.getDate()).padStart(2, "0");
+      setFechaSel(`${yyyy}-${mm}-${dd}`);
+    }
+  };
+
   const agendaMap = useMemo(() => {
     const map = {};
     citas
@@ -284,7 +298,6 @@ export default function AdminMasterPanel() {
     return list;
   }, []);
 
-  // Filtro de búsqueda optimizado para evitar llamadas pesadas en render
   const clientesFiltrados = useMemo(() => {
     return clientes.filter((c) =>
       (c.nombre || c.displayName || "")
@@ -368,28 +381,33 @@ export default function AdminMasterPanel() {
         )}
       </View>
 
-      {/* NAVEGADOR DE FECHAS */}
-      <View style={styles.dateNav}>
-        <TouchableOpacity
-          onPress={() => {
-            const d = new Date(fechaSel + "T12:00:00");
-            d.setDate(d.getDate() - 1);
-            setFechaSel(d.toISOString().split("T")[0]);
-          }}
-        >
-          <MaterialCommunityIcons name="chevron-left" size={35} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.dateText}>{fechaSel}</Text>
-        <TouchableOpacity
-          onPress={() => {
-            const d = new Date(fechaSel + "T12:00:00");
-            d.setDate(d.getDate() + 1);
-            setFechaSel(d.toISOString().split("T")[0]);
-          }}
-        >
-          <MaterialCommunityIcons name="chevron-right" size={35} color="#fff" />
-        </TouchableOpacity>
-      </View>
+      {/* NUEVO SECTOR DE CALENDARIO (REEMPLAZA FLECHAS INCÓMODAS) */}
+      {vistaActual === "agenda" && (
+        <View style={styles.calendarNavContainer}>
+          <TouchableOpacity
+            style={styles.calendarButton}
+            onPress={() => setMostrarCalendario(true)}
+          >
+            <MaterialCommunityIcons
+              name="calendar-search"
+              size={22}
+              color="#fff"
+            />
+            <Text style={styles.calendarButtonText}>
+              Buscar Fecha: {fechaSel}
+            </Text>
+          </TouchableOpacity>
+
+          {mostrarCalendario && (
+            <DateTimePicker
+              value={new Date(fechaSel + "T12:00:00")}
+              mode="date"
+              display={Platform.OS === "ios" ? "spinner" : "calendar"}
+              onChange={onDateChange}
+            />
+          )}
+        </View>
+      )}
 
       {/* CONTENIDO PRINCIPAL */}
       {vistaActual === "agenda" ? (
@@ -418,7 +436,7 @@ export default function AdminMasterPanel() {
                 </Text>
                 {info?.esInicio && (
                   <Text style={styles.pacienteTag} numberOfLines={1}>
-                    {info.nombrePaciente}
+                    {info.nombrePaciente || info.pacienteNombre}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -453,7 +471,8 @@ export default function AdminMasterPanel() {
       {citaEnEdicion && (
         <View style={styles.editPanel}>
           <Text style={styles.editPanelTitle}>
-            Paciente: {citaEnEdicion.nombrePaciente}
+            Paciente:{" "}
+            {citaEnEdicion.nombrePaciente || citaEnEdicion.pacienteNombre}
           </Text>
           <Text style={styles.label}>
             Reasignar médico para las {citaEnEdicion.hora}:
@@ -496,7 +515,7 @@ export default function AdminMasterPanel() {
               onPress={() => setCitaEnEdicion(null)}
               style={styles.btnCancel}
             >
-              <Text>CERRAR</Text>
+              <Text style={{ color: "#000" }}>CERRAR</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -553,7 +572,9 @@ export default function AdminMasterPanel() {
                     color={COLORS.primaryGreen}
                   />
                   <View style={{ marginLeft: 10 }}>
-                    <Text style={styles.waName}>{item.nombrePaciente}</Text>
+                    <Text style={styles.waName}>
+                      {item.nombrePaciente || item.pacienteNombre}
+                    </Text>
                     <Text style={styles.waSub}>
                       {item.hora} - {item.medico}
                     </Text>
@@ -627,7 +648,6 @@ export default function AdminMasterPanel() {
   );
 }
 
-// ... Mantén tus estilos abajo exactamente igual ...
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F4F6F8" },
   header: {
@@ -654,12 +674,40 @@ const styles = StyleSheet.create({
   },
   tabActive: { backgroundColor: COLORS.primaryGreen },
   tabText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
+  calendarNavContainer: {
+    paddingHorizontal: 20,
+    marginTop: 15,
+    alignItems: "center",
+  },
+  calendarButton: {
+    flexDirection: "row",
+    backgroundColor: COLORS.primaryGreen,
+    paddingVertical: 12,
+    paddingHorizontal: 25,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    maxWidth: 350,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+  },
+  calendarButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 14,
+    marginLeft: 10,
+  },
   grid: {
     padding: 10,
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
     paddingBottom: 120,
+    marginTop: 10,
   },
   slot: {
     width: "23%",
@@ -752,18 +800,8 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     alignItems: "center",
-  },
-  dateNav: {
-    flexDirection: "row",
     justifyContent: "center",
-    alignItems: "center",
-    marginTop: 10,
-  },
-  dateText: {
-    color: "#333",
-    fontSize: 16,
-    fontWeight: "bold",
-    marginHorizontal: 20,
+    paddingHorizontal: 15,
   },
   modalOverlay: {
     flex: 1,
