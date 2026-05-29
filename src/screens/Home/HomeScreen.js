@@ -68,26 +68,37 @@ const HomeScreen = ({ role, userData }) => {
     typeof window !== "undefined" &&
     /Android/i.test(navigator.userAgent);
 
-  // --- LÓGICA DE FIDELIZACIÓN DINÁMICA ---
+  // --- LÓGICA DE FIDELIZACIÓN POR NIVELES ---
   const puntosActuales = userData?.puntosSalud || 0;
-  const esUsuarioPremium = puntosActuales >= 100; // Meta: 100 puntos o más
 
-  // Estilos dinámicos para la tarjeta basados en el puntaje
-  const estiloTarjetaDinamica = [
-    styles.pointsCard,
-    esUsuarioPremium && {
-      backgroundColor: "#0D47A1", // Un azul rey/premium profundo (puedes cambiarlo por dorado #D4AF37 si prefieres)
+  let nivelConfig = {
+    cardBg: COLORS.darkGreen || "#1A3A34",
+    borderColor: "transparent",
+    borderWidth: 0,
+    badgeText: "CLIENTE PRI",
+    badgeIcon: "shield-check",
+    rightIcon: "leaf",
+  };
+
+  if (puntosActuales >= 1000 && puntosActuales < 2000) {
+    nivelConfig = {
+      cardBg: "#0D47A1", // Azul Premium profundo
       borderColor: "#8CC63F",
       borderWidth: 1,
-    },
-  ];
-
-  const estiloBotonCanjearDinamico = [
-    styles.redeemButton,
-    esUsuarioPremium && {
-      backgroundColor: "#8CC63F", // Resalta el botón de canje cuando tiene muchos puntos
-    },
-  ];
+      badgeText: "CLIENTE PRO",
+      badgeIcon: "star-circle",
+      rightIcon: "shield-star",
+    };
+  } else if (puntosActuales >= 2000) {
+    nivelConfig = {
+      cardBg: "#A67C00", // Dorado Oro Premium balanceado (legible con texto blanco)
+      borderColor: "#FFD700",
+      borderWidth: 1.5,
+      badgeText: "CLIENTE PREMIUM",
+      badgeIcon: "crown",
+      rightIcon: "star-face",
+    };
+  }
 
   return (
     <ScreenWrapper showBack={false}>
@@ -126,23 +137,28 @@ const HomeScreen = ({ role, userData }) => {
             <Text style={styles.subtitle}>Tu Clínica Dental Digital</Text>
           </View>
 
-          {/* 🌟 Panel de Fidelización con cambio de Color Dinámico */}
-          <View style={estiloTarjetaDinamica}>
+          {/* 🌟 Panel de Fidelización Dinámico por Rangos */}
+          <View
+            style={[
+              styles.pointsCard,
+              {
+                backgroundColor: nivelConfig.cardBg,
+                borderColor: nivelConfig.borderColor,
+                borderWidth: nivelConfig.borderWidth,
+              },
+            ]}
+          >
             <View style={styles.pointsHeader}>
               <View style={styles.badgeContainer}>
                 <MaterialCommunityIcons
-                  name={esUsuarioPremium ? "crown" : "shield-check"} // Ícono cambia a corona si es premium
+                  name={nivelConfig.badgeIcon}
                   size={20}
                   color="#fff"
                 />
-                <Text style={styles.typeText}>
-                  {esUsuarioPremium
-                    ? "PACIENTE ESTRELLA"
-                    : userData?.tipoCliente || "Cliente Fiel"}
-                </Text>
+                <Text style={styles.typeText}>{nivelConfig.badgeText}</Text>
               </View>
               <MaterialCommunityIcons
-                name={esUsuarioPremium ? "star" : "leaf"}
+                name={nivelConfig.rightIcon}
                 size={24}
                 color="rgba(255,255,255,0.6)"
               />
@@ -156,7 +172,12 @@ const HomeScreen = ({ role, userData }) => {
                 </Text>
               </View>
               <TouchableOpacity
-                style={estiloBotonCanjearDinamico}
+                style={[
+                  styles.redeemButton,
+                  puntosActuales >= 1000 && {
+                    backgroundColor: "rgba(255,255,255,0.25)",
+                  }, // El botón se adapta estéticamente en niveles altos
+                ]}
                 onPress={() => handleNavigation("/beneficios")}
               >
                 <Text style={styles.redeemButtonText}>Canjear</Text>
@@ -255,7 +276,6 @@ const styles = StyleSheet.create({
   },
   subtitle: { fontSize: 15, color: "#666", marginTop: 5 },
   pointsCard: {
-    backgroundColor: COLORS.darkGreen || "#1A3A34",
     width: "100%",
     borderRadius: 22,
     padding: 18,
@@ -301,7 +321,7 @@ const styles = StyleSheet.create({
   pointsUnit: {
     fontSize: 16,
     fontWeight: "normal",
-    color: COLORS.primaryGreen,
+    color: "#fff", // Blanco para mantener el contraste universal
   },
   redeemButton: {
     backgroundColor: COLORS.primaryGreen,
