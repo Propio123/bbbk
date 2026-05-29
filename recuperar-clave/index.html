@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Restablecer Contraseña | Clínica</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            background-color: #8CC63F; /* Tu COLORS.primaryGreen */
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            margin: 0; 
+        }
+        .card { 
+            background: white; 
+            padding: 40px 30px; 
+            border-radius: 30px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
+            width: 100%; 
+            max-width: 380px; 
+            text-align: center; 
+            box-sizing: border-box;
+        }
+        h2 { 
+            color: #0F4C43; /* Tu COLORS.darkGreen */
+            margin-top: 0;
+            margin-bottom: 10px; 
+            font-size: 24px;
+        }
+        p { 
+            color: #666; 
+            font-size: 14px; 
+            margin-bottom: 25px; 
+            line-height: 20px;
+        }
+        input { 
+            width: 100%; 
+            height: 50px; 
+            background-color: #F5F5F5; 
+            border: none; 
+            border-radius: 12px; 
+            padding: 0 15px; 
+            box-sizing: border-box; 
+            margin-bottom: 20px; 
+            font-size: 16px; 
+            outline: none;
+        }
+        input:focus {
+            border: 1px solid #8CC63F;
+        }
+        button { 
+            width: 100%; 
+            height: 52px; 
+            background-color: #8CC63F; 
+            border: none; 
+            border-radius: 15px; 
+            color: white; 
+            font-weight: bold; 
+            font-size: 16px; 
+            cursor: pointer; 
+            transition: opacity 0.2s, background-color 0.2s; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        button:hover { 
+            opacity: 0.9; 
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .message { 
+            margin-top: 20px; 
+            font-size: 14px; 
+            font-weight: 600; 
+            display: none; 
+            line-height: 20px;
+        }
+        .success { color: #8CC63F; }
+        .error { color: #ef4444; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>Nueva Contraseña</h2>
+    <p>Ingresa tu nueva clave de acceso para actualizar tu cuenta de la clínica.</p>
+    
+    <input type="password" id="newPassword" placeholder="Escribe tu nueva contraseña" required>
+    <button id="btnSubmit" onclick="procesarCambioClave()">GUARDAR CONTRASEÑA</button>
+    
+    <div id="msgBox" class="message"></div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getAuth, verifyPasswordResetCode, confirmPasswordReset } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+    // Usa exactamente las mismas credenciales de tu archivo firebase.config de la app móvil
+    const firebaseConfig = {
+        apiKey: "TU_API_KEY_AQUÍ",
+        authDomain: "bbk-app-ffdc0.firebaseapp.com",
+        projectId: "bbk-app-ffdc0",
+        storageBucket: "bbk-app-ffdc0.appspot.com",
+        messagingSenderId: "TU_MESSAGING_SENDER_ID",
+        appId: "TU_APP_ID"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const oobCode = urlParams.get('oobCode');
+
+    window.procesarCambioClave = async function() {
+        const passwordInput = document.getElementById('newPassword');
+        const btnSubmit = document.getElementById('btnSubmit');
+        
+        const nuevaClave = passwordInput.value;
+
+        if (!nuevaClave || nuevaClave.length < 6) {
+            mostrarMensaje("La contraseña debe tener al menos 6 caracteres.", "error");
+            return;
+        }
+
+        if (!oobCode) {
+            mostrarMensaje("El código de recuperación no es válido o ya caducó. Por favor, solicita un nuevo correo desde la aplicación.", "error");
+            return;
+        }
+
+        btnSubmit.disabled = true;
+        btnSubmit.innerText = "PROCESANDO...";
+
+        try {
+            // 1. Validar el token primero
+            await verifyPasswordResetCode(auth, oobCode);
+            // 2. Ejecutar la actualización de la clave
+            await confirmPasswordReset(auth, oobCode, nuevaClave);
+
+            mostrarMensaje("¡Contraseña actualizada con éxito! Ya puedes regresar a la aplicación e iniciar sesión con tu nueva clave.", "success");
+            passwordInput.style.display = "none";
+            btnSubmit.style.display = "none";
+        } catch (error) {
+            console.error("Error detallado en Web Recovery:", error);
+            let mensaje = "No se pudo actualizar la contraseña. El enlace es inválido o ya fue utilizado.";
+            if (error.code === 'auth/weak-password') {
+                mensaje = "La contraseña seleccionada es demasiado débil.";
+            }
+            mostrarMensaje(mensaje, "error");
+            btnSubmit.disabled = false;
+            btnSubmit.innerText = "GUARDAR CONTRASEÑA";
+        }
+    }
+
+    function mostrarMensaje(texto, tipo) {
+        const msgBox = document.getElementById('msgBox');
+        msgBox.innerText = texto;
+        msgBox.className = `message ${tipo}`;
+        msgBox.style.display = "block";
+    }
+</script>
+</body>
+</html>
