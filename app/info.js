@@ -35,7 +35,7 @@ const InfoItem = ({ icon, title, subtitle, onPress, color = "#499A47" }) => (
 const Info = () => {
   const [rating, setRating] = useState(0);
   const direccion = "Manuel de la Chica Narvaez y Velasco 8-63, Ibarra 100150";
-  const telefono = "(06) 261-0657";
+  const telefono = "+593999036517";
 
   const abrirMapa = () => {
     const url = Platform.select({

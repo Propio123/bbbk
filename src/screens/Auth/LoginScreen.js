@@ -72,18 +72,43 @@ const LoginScreen = ({ onSwitchToRegister }) => {
     if (!email) {
       mostrarNotificacion(
         "Dato Necesario",
-        "Escriba su correo electrónico primero.",
+        "Por favor, escriba su correo electrónico en el campo superior primero.",
       );
       return;
     }
+
+    const emailLimpio = email.trim().toLowerCase();
+
     try {
-      await sendPasswordResetEmail(auth, email.trim().toLowerCase());
-      mostrarNotificacion("Correo Enviado", "Revise su bandeja de entrada.");
-    } catch (error) {
+      // 1. Forzamos a Firebase a utilizar el idioma local de tu cliente
+      auth.languageCode = "es";
+
+      // 2. Ejecutamos la solicitud de envío de correo de recuperación
+      await sendPasswordResetEmail(auth, emailLimpio);
+
       mostrarNotificacion(
-        "Recuperación",
-        "No se pudo enviar el correo de recuperación.",
+        "Correo Enviado",
+        "Hemos enviado un enlace seguro a su correo electrónico. Abra el enlace para cambiar su contraseña y luego regrese aquí para iniciar sesión.",
       );
+    } catch (error) {
+      console.log("Error Firebase Recuperación Clave:", error.code);
+
+      let mensajeError =
+        "No se pudo procesar la solicitud de recuperación en este momento.";
+
+      // Control de excepciones comunes en español
+      if (error.code === "auth/user-not-found") {
+        mensajeError =
+          "El correo electrónico ingresado no coincide con ningún paciente registrado en la clínica.";
+      } else if (error.code === "auth/invalid-email") {
+        mensajeError =
+          "El formato del correo electrónico ingresado no es válido.";
+      } else if (error.code === "auth/too-many-requests") {
+        mensajeError =
+          "Se han realizado demasiados intentos. Por favor, inténtelo de nuevo más tarde.";
+      }
+
+      mostrarNotificacion("Recuperación de Cuenta", mensajeError);
     }
   };
 
