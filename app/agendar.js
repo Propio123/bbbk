@@ -254,38 +254,40 @@ const AgendarCitaClient = () => {
       const user = auth.currentUser;
       let nombreRealPaciente = "Paciente Registrado";
 
-      // 1. Buscamos el nombre real del paciente en la colección de usuarios de Firestore
+      // 1. Consultamos el campo 'nombre' dentro de la colección 'users'
       if (user) {
         try {
-          // Ajusta "usuarios" por el nombre exacto de tu colección (ej. "pacientes" o "users")
-          const userDocRef = doc(db, "usuarios", user.uid);
+          // Apuntamos exactamente a la colección "users" usando el UID del usuario autenticado
+          const userDocRef = doc(db, "users", user.uid);
           const userDocSnap = await getDoc(userDocRef);
 
           if (userDocSnap.exists()) {
             const userData = userDocSnap.data();
-            // Validamos cómo tienes estructurado el nombre en tu base de datos
-            nombreRealPaciente =
-              userData.nombreCompleto ||
-              `${userData.primerNombre || ""} ${userData.primerApellido || ""}`.trim() ||
-              userData.nombre ||
-              user.displayName ||
-              "Paciente Registrado";
-          } else if (user.displayName) {
-            nombreRealPaciente = user.displayName;
+            console.log("Datos recuperados de Firestore:", userData); // Esto saldrá en tu terminal de Expo
+
+            // Extraemos directamente tu campo 'nombre'
+            if (userData && userData.nombre) {
+              nombreRealPaciente = userData.nombre;
+            } else if (user.displayName) {
+              nombreRealPaciente = user.displayName;
+            }
+          } else {
+            console.log(
+              "No existe el documento del usuario en la colección 'users' con el UID:",
+              user.uid,
+            );
+            if (user.displayName) nombreRealPaciente = user.displayName;
           }
         } catch (errSnap) {
-          console.log(
-            "No se pudo obtener el perfil de Firestore, usando fallback:",
-            errSnap,
-          );
+          console.log("Error detallado al consultar Firestore:", errSnap);
           if (user.displayName) nombreRealPaciente = user.displayName;
         }
       }
 
-      // 2. Guardamos la cita detallada (Privada) en Firestore
+      // 2. Guardamos la cita detallada (Privada) en Firestore con el nombre real
       const docCitaRef = await addDoc(collection(db, "citas"), {
         pacienteId: user.uid,
-        nombrePaciente: nombreRealPaciente, // Guardamos el nombre real recuperado
+        nombrePaciente: nombreRealPaciente,
         servicio: servicioSel.nombre,
         duracion: servicioSel.duracion,
         fecha: fechaSel,
@@ -305,7 +307,7 @@ const AgendarCitaClient = () => {
         estado: "pendiente",
       });
 
-      // 4. Construimos el mensaje incluyendo el nombre real obtenido
+      // 4. Construimos el mensaje final para WhatsApp
       const msg =
         `🦷 *Nueva Solicitud de Cita*\n\n` +
         `👤 *Paciente:* ${nombreRealPaciente}\n` +
