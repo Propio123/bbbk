@@ -112,7 +112,7 @@ const Register = () => {
       // 4. Persistencia en Firestore con campo de Historia Clínica inicializado
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
-        nombre: `${primerNombre} ${segundoNombre}`, // Mantiene compatibilidad con tu HomeScreen actual
+        nombre: `${primerNombre} ${segundoNombre}`,
         apellido: `${primerApellido} ${segundoApellido}`,
         primerNombre,
         segundoNombre,
@@ -123,7 +123,7 @@ const Register = () => {
         fechaNacimiento: fechaString,
         rol: "paciente",
         puntosSalud: 0,
-        numHistoriaClinica: "", // <-- Espacio listo para que el Admin lo complete en la clínica
+        numHistoriaClinica: "",
         consentimientoLOPDP: true,
         fechaRegistro: new Date().toISOString(),
       });
@@ -131,7 +131,31 @@ const Register = () => {
       Alert.alert("¡Éxito!", "Cuenta creada correctamente.");
       router.replace("/");
     } catch (error) {
-      Alert.alert("Error", error.message);
+      console.error("Error completo en el registro: ", error);
+
+      // 🔍 CAPTURA Y CONTROL DE CORREO DUPLICADO
+      if (error.code === "auth/email-already-in-use") {
+        Alert.alert(
+          "Correo ya registrado",
+          "Este correo electrónico ya se encuentra vinculado a una cuenta en la clínica. Si olvidaste tu contraseña, por favor regresa a la pantalla de inicio para restablecerla o inicia sesión.",
+        );
+      } else if (error.code === "auth/invalid-email") {
+        Alert.alert(
+          "Correo inválido",
+          "La dirección de correo electrónico no tiene un formato válido (ejemplo@dominio.com).",
+        );
+      } else if (error.code === "auth/weak-password") {
+        Alert.alert(
+          "Contraseña débil",
+          "La contraseña debe tener un mínimo de 6 caracteres.",
+        );
+      } else {
+        // Alerta de respaldo por si ocurre otro error de red o Firebase
+        Alert.alert(
+          "No se pudo completar el registro",
+          "Ocurrió un error inesperado. Por favor, inténtalo de nuevo más tarde.",
+        );
+      }
     }
   };
 
