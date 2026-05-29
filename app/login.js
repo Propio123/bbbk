@@ -1,6 +1,8 @@
-// Importamos el diseño que ya tienes en src
+import { useRouter } from "expo-router";
 import LoginScreen from "../src/screens/Auth/LoginScreen";
 
 export default function LoginPage() {
-  return <LoginScreen />;
+  const router = useRouter();
+
+  return <LoginScreen onSwitchToRegister={() => router.push("/register")} />;
 }

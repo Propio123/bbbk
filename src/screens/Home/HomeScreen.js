@@ -1,9 +1,10 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useNavigationContainerRef } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +14,7 @@ import {
 
 import { ScreenWrapper } from "../../../components/ScreenWrapper";
 import { COLORS } from "../../constants/theme";
+import LoginScreen from "../Auth/LoginScreen";
 
 const MenuButton = ({ icon, label, onPress }) => (
   <TouchableOpacity style={styles.menuItem} onPress={onPress}>
@@ -28,28 +30,20 @@ const MenuButton = ({ icon, label, onPress }) => (
 );
 
 const HomeScreen = ({ role, userData }) => {
+  const router = useRouter();
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
-    // Si el rol detectado es admin, disparamos la redirección de forma asíncrona segura
     if (role === "admin") {
       setIsRedirecting(true);
-
-      // Enviamos el replace fuera del ciclo síncrono de React
-      // Esto da tiempo a Expo Router de inicializar el árbol de navegación interno
       const timer = setTimeout(() => {
         if (router) {
           router.replace("/admin");
         }
-      }, 50); // 50ms es imperceptible para el usuario pero vital para el hilo nativo
-
+      }, 50);
       return () => clearTimeout(timer);
     }
-  }, [role, router]);
-
-  // Manejo seguro para las rutas de los botones del cliente (evita cierres por clicks prematuros)
-  const router = useRouter();
-  const rootNavigationRef = useNavigationContainerRef(); // 2. Crea la referencia nativa
+  }, [role]);
 
   const handleNavigation = (path) => {
     if (router && role === "paciente") {
@@ -57,26 +51,71 @@ const HomeScreen = ({ role, userData }) => {
     }
   };
 
-  // Tu bloque de carga elegante se mantiene exactamente igual 👍
+  if (role === null) {
+    return <LoginScreen />;
+  }
+
   if (role === "admin" || !role || isRedirecting) {
     return (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-          backgroundColor: "#fff",
-        }}
-      >
+      <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primaryGreen} />
       </View>
     );
   }
 
-  // Interfaz limpia e interactiva 100% exclusiva para el Paciente
+  const esAndroidWeb =
+    Platform.OS === "web" &&
+    typeof window !== "undefined" &&
+    /Android/i.test(navigator.userAgent);
+
+  // --- LÓGICA DE FIDELIZACIÓN DINÁMICA ---
+  const puntosActuales = userData?.puntosSalud || 0;
+  const esUsuarioPremium = puntosActuales >= 100; // Meta: 100 puntos o más
+
+  // Estilos dinámicos para la tarjeta basados en el puntaje
+  const estiloTarjetaDinamica = [
+    styles.pointsCard,
+    esUsuarioPremium && {
+      backgroundColor: "#0D47A1", // Un azul rey/premium profundo (puedes cambiarlo por dorado #D4AF37 si prefieres)
+      borderColor: "#8CC63F",
+      borderWidth: 1,
+    },
+  ];
+
+  const estiloBotonCanjearDinamico = [
+    styles.redeemButton,
+    esUsuarioPremium && {
+      backgroundColor: "#8CC63F", // Resalta el botón de canje cuando tiene muchos puntos
+    },
+  ];
+
   return (
     <ScreenWrapper showBack={false}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      {esAndroidWeb && (
+        <TouchableOpacity
+          style={styles.androidBanner}
+          onPress={() =>
+            Linking.openURL(
+              "https://docs.google.com/uc?export=download&id=1Z3Pm20ZmLHkXMxN5B3I2zF1R9_LqkNEh",
+            )
+          }
+        >
+          <MaterialCommunityIcons
+            name="android"
+            size={20}
+            color="#fff"
+            style={{ marginRight: 8 }}
+          />
+          <Text style={styles.androidBannerText}>
+            ¿Usas Android? Descarga nuestra App nativa haciendo clic aquí
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContainer}
+      >
         <View style={styles.body}>
           <Text style={styles.sloganText}>Sonriendo junto a ti</Text>
 
@@ -87,21 +126,23 @@ const HomeScreen = ({ role, userData }) => {
             <Text style={styles.subtitle}>Tu Clínica Dental Digital</Text>
           </View>
 
-          {/* Panel de Fidelización */}
-          <View style={styles.pointsCard}>
+          {/* 🌟 Panel de Fidelización con cambio de Color Dinámico */}
+          <View style={estiloTarjetaDinamica}>
             <View style={styles.pointsHeader}>
               <View style={styles.badgeContainer}>
                 <MaterialCommunityIcons
-                  name="shield-check"
+                  name={esUsuarioPremium ? "crown" : "shield-check"} // Ícono cambia a corona si es premium
                   size={20}
                   color="#fff"
                 />
                 <Text style={styles.typeText}>
-                  {userData?.tipoCliente || "Cliente Fiel"}
+                  {esUsuarioPremium
+                    ? "PACIENTE ESTRELLA"
+                    : userData?.tipoCliente || "Cliente Fiel"}
                 </Text>
               </View>
               <MaterialCommunityIcons
-                name="leaf"
+                name={esUsuarioPremium ? "star" : "leaf"}
                 size={24}
                 color="rgba(255,255,255,0.6)"
               />
@@ -111,12 +152,11 @@ const HomeScreen = ({ role, userData }) => {
               <View>
                 <Text style={styles.pointsLabel}>Puntos Salud Acumulados</Text>
                 <Text style={styles.pointsValue}>
-                  {userData?.puntosSalud || 0}{" "}
-                  <Text style={styles.pointsUnit}>pts</Text>
+                  {puntosActuales} <Text style={styles.pointsUnit}>pts</Text>
                 </Text>
               </View>
               <TouchableOpacity
-                style={styles.redeemButton}
+                style={estiloBotonCanjearDinamico}
                 onPress={() => handleNavigation("/beneficios")}
               >
                 <Text style={styles.redeemButtonText}>Canjear</Text>
@@ -124,7 +164,7 @@ const HomeScreen = ({ role, userData }) => {
             </View>
           </View>
 
-          {/* Grillas de Menú sanitizadas */}
+          {/* Grillas de Menú */}
           <View style={styles.grid}>
             <MenuButton
               icon="calendar-plus"
@@ -167,7 +207,37 @@ const HomeScreen = ({ role, userData }) => {
 };
 
 const styles = StyleSheet.create({
-  body: { padding: 20, alignItems: "center" },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#fff",
+  },
+  androidBanner: {
+    backgroundColor: "#1A3A34",
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+  },
+  androidBannerText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 12,
+    textAlign: "center",
+  },
+  scrollContainer: {
+    alignItems: "center",
+    width: "100%",
+  },
+  body: {
+    padding: 20,
+    alignItems: "center",
+    width: "100%",
+    maxWidth: 500,
+  },
   sloganText: {
     color: COLORS.primaryGreen,
     fontSize: 14,

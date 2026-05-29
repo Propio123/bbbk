@@ -16,11 +16,10 @@ import {
   View,
 } from "react-native";
 
-import { ScreenWrapper } from "../../../components/ScreenWrapper";
+import { ScreenWrapper } from "../../../components/ScreenWrapper"; // Ajusta los ../ según tu estructura real si es exacta
 import { auth } from "../../api/firebase.config";
 import { COLORS } from "../../constants/theme";
 
-// Recibimos la función para cambiar de pantalla de forma segura
 const LoginScreen = ({ onSwitchToRegister }) => {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -45,11 +44,12 @@ const LoginScreen = ({ onSwitchToRegister }) => {
       return;
     }
     setCargando(true);
-    // Limpieza estricta de correo para evitar fallos de tipeo nativos
     const emailFormateado = email.trim().toLowerCase();
 
     try {
       await signInWithEmailAndPassword(auth, emailFormateado, password);
+      // NOTA: No hace falta router.push aquí. Nuestro index.js detectará el login
+      // de forma automática mediante onAuthStateChanged y cargará el Home.
     } catch (error) {
       console.log("Error Firebase Login:", error.code);
       let mensaje = "Error de conexión.";
@@ -142,11 +142,8 @@ const LoginScreen = ({ onSwitchToRegister }) => {
           )}
         </TouchableOpacity>
 
-        {/* Cambio de pantalla seguro sin empujar rutas rotas */}
         <TouchableOpacity
           onPress={() => {
-            // Si por alguna razón el padre pasa el prop, lo respetamos;
-            // de lo contrario, disparamos la navegación nativa hacia /register
             if (onSwitchToRegister) {
               onSwitchToRegister();
             } else {
@@ -170,6 +167,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 25,
     paddingTop: 10,
     alignItems: "center",
+    width: "100%", // Asegura consistencia en vistas web responsivas
+    maxWidth: 450, // Evita que se deforme en pantallas gigantes de PC
+    alignSelf: "center",
   },
   title: {
     fontSize: 26,
