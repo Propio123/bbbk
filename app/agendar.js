@@ -3,6 +3,8 @@ import { useRouter } from "expo-router";
 import {
   addDoc,
   collection,
+  doc,
+  getDoc,
   onSnapshot,
   query,
   serverTimestamp,
