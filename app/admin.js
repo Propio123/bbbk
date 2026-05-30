@@ -29,45 +29,72 @@ import {
 import { auth, db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
 
-// Sub-componente interno optimizado para evitar re-renders masivos al escribir millas
-const ClienteItem = ({ item, onUpdateMillas, onIncrement }) => {
+// Sub-componente interno optimizado para evitar re-renders masivos al escribir
+const ClienteItem = ({ item, onUpdateMillas, onIncrement, onUpdateHC }) => {
   const [localMillas, setLocalMillas] = useState(String(item.puntosSalud || 0));
+  const [localHC, setLocalHC] = useState(String(item.numHistoriaClinica || ""));
 
   useEffect(() => {
     setLocalMillas(String(item.puntosSalud || 0));
   }, [item.puntosSalud]);
 
+  useEffect(() => {
+    setLocalHC(String(item.numHistoriaClinica || ""));
+  }, [item.numHistoriaClinica]);
+
   return (
     <View style={styles.clienteCard}>
-      <Text style={{ fontWeight: "bold", flex: 1 }}>
-        {item.nombre || item.displayName || "Paciente"}
-      </Text>
-      <View style={{ flexDirection: "row", alignItems: "center" }}>
-        <Text style={{ fontSize: 10, color: "#666", marginRight: 5 }}>
-          Millas:
+      <View style={{ flex: 1, marginRight: 10 }}>
+        <Text style={{ fontWeight: "bold", fontSize: 14 }}>
+          {item.nombre || item.displayName || "Paciente"}
         </Text>
-        <TextInput
-          style={styles.millasInput}
-          keyboardType="numeric"
-          value={localMillas}
-          onChangeText={setLocalMillas}
-          onEndEditing={() => {
-            const val = Number(localMillas.replace(/[^0-9]/g, ""));
-            onUpdateMillas(item.id, val);
-          }}
-        />
-        <TouchableOpacity
-          onPress={() => onIncrement(item.id, item.puntosSalud, -10)}
-          style={[styles.btnSmall, { backgroundColor: "#FF5252" }]}
+
+        {/* Input para modificar la Historia Clínica */}
+        <View
+          style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}
         >
-          <Text style={styles.btnText}>-10</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => onIncrement(item.id, item.puntosSalud, 10)}
-          style={styles.btnSmall}
-        >
-          <Text style={styles.btnText}>+10</Text>
-        </TouchableOpacity>
+          <Text style={{ fontSize: 11, color: "#555", fontWeight: "600" }}>
+            H.C:{" "}
+          </Text>
+          <TextInput
+            style={styles.hcInput}
+            placeholder="N° Historia"
+            placeholderTextColor="#999"
+            value={localHC}
+            onChangeText={setLocalHC}
+            onEndEditing={() => onUpdateHC(item.id, localHC)}
+          />
+        </View>
+      </View>
+
+      <View style={{ alignItems: "flex-end" }}>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Text style={{ fontSize: 10, color: "#666", marginRight: 5 }}>
+            Millas:
+          </Text>
+          <TextInput
+            style={styles.millasInput}
+            keyboardType="numeric"
+            value={localMillas}
+            onChangeText={setLocalMillas}
+            onEndEditing={() => {
+              const val = Number(localMillas.replace(/[^0-9]/g, ""));
+              onUpdateMillas(item.id, val);
+            }}
+          />
+          <TouchableOpacity
+            onPress={() => onIncrement(item.id, item.puntosSalud, -10)}
+            style={[styles.btnSmall, { backgroundColor: "#FF5252" }]}
+          >
+            <Text style={styles.btnText}>-10</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => onIncrement(item.id, item.puntosSalud, 10)}
+            style={styles.btnSmall}
+          >
+            <Text style={styles.btnText}>+10</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -135,6 +162,17 @@ export default function AdminMasterPanel() {
       await updateDoc(doc(db, "users", userId), { puntosSalud: value });
     } catch (e) {
       Alert.alert("Error", "No se pudieron actualizar los puntos.");
+    }
+  };
+
+  const handleUpdateHC = async (userId, value) => {
+    try {
+      await updateDoc(doc(db, "users", userId), { numHistoriaClinica: value });
+    } catch (e) {
+      Alert.alert(
+        "Error",
+        "No se pudo actualizar el número de historia clínica.",
+      );
     }
   };
 
@@ -208,7 +246,7 @@ export default function AdminMasterPanel() {
         tel = "593" + tel;
       }
 
-      const msg = `Hola ${cita.nombrePaciente || cita.pacienteNombre}, le saluda bbbkodontologia. Confirmamos su cita para mañana a las ${cita.hora}. ¿Nos confirma su asistencia?`;
+      const msg = `Hola ${cita.NombrePaciente}, le saluda bbbkodontologia. Confirmamos su cita para mañana a las ${cita.hora}. ¿Nos confirma su asistencia?`;
       const url = `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`;
 
       try {
@@ -255,7 +293,6 @@ export default function AdminMasterPanel() {
     }
   };
 
-  // Manejador del cambio de fecha desde el calendario nativo
   const onDateChange = (event, selectedDate) => {
     setMostrarCalendario(Platform.OS === "ios");
     if (selectedDate) {
@@ -306,6 +343,28 @@ export default function AdminMasterPanel() {
     );
   }, [clientes, busqueda]);
 
+  // Cálculo dinámico de citas finalizadas del día por médico
+  const reporteCitasCerradas = useMemo(() => {
+    const conteo = {};
+    listaMedicos.forEach((m) => {
+      conteo[m.medico] = 0;
+    });
+
+    citas.forEach((cita) => {
+      if (cita.estado === "finalizado" && conteo[cita.medico] !== undefined) {
+        conteo[cita.medico] += 1;
+      }
+    });
+
+    return conteo;
+  }, [citas, listaMedicos]);
+
+  useEffect(() => {
+    if (citaEnEdicion) {
+      setNuevoMedicoParaCita(citaEnEdicion.medico || "");
+    }
+  }, [citaEnEdicion]);
+
   return (
     <View style={styles.container}>
       {/* HEADER */}
@@ -316,7 +375,7 @@ export default function AdminMasterPanel() {
           >
             <MaterialCommunityIcons name="power" size={26} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>333K Master Panel</Text>
+          <Text style={styles.headerTitle}>BBBK Master Panel</Text>
           <View style={{ flexDirection: "row" }}>
             <TouchableOpacity
               onPress={prepararConfirmaciones}
@@ -381,7 +440,7 @@ export default function AdminMasterPanel() {
         )}
       </View>
 
-      {/* NUEVO SECTOR DE CALENDARIO (REEMPLAZA FLECHAS INCÓMODAS) */}
+      {/* SECTOR DE CALENDARIO */}
       {vistaActual === "agenda" && (
         <View style={styles.calendarNavContainer}>
           <TouchableOpacity
@@ -411,38 +470,77 @@ export default function AdminMasterPanel() {
 
       {/* CONTENIDO PRINCIPAL */}
       {vistaActual === "agenda" ? (
-        <ScrollView contentContainerStyle={styles.grid}>
-          {HORARIOS.map((h) => {
-            const info = agendaMap[h];
-            return (
-              <TouchableOpacity
-                key={h}
-                onPress={() => info && setCitaEnEdicion(info)}
-                style={[
-                  styles.slot,
-                  info?.estado === "aprobado" && styles.bgRojo,
-                  info?.estado === "finalizado" && {
-                    backgroundColor: "#A5D6A7",
-                  },
-                ]}
-              >
-                <Text
+        <View style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={styles.grid}>
+            {HORARIOS.map((h) => {
+              const info = agendaMap[h];
+              return (
+                <TouchableOpacity
+                  key={h}
+                  onPress={() => info && setCitaEnEdicion(info)}
                   style={[
-                    styles.slotText,
-                    info && { color: "#000", fontWeight: "bold" },
+                    styles.slot,
+                    info?.estado === "pendiente" && {
+                      backgroundColor: "#FFF3E0",
+                      borderColor: "#FFE0B2",
+                    },
+                    info?.estado === "aprobado" && {
+                      backgroundColor: "#E3F2FD",
+                      borderColor: "#BBDEFB",
+                    },
+                    info?.estado === "confirmado" && styles.bgRojo,
+                    info?.estado === "finalizado" && {
+                      backgroundColor: "#A5D6A7",
+                      borderColor: "#81C784",
+                    },
                   ]}
                 >
-                  {h}
-                </Text>
-                {info?.esInicio && (
-                  <Text style={styles.pacienteTag} numberOfLines={1}>
-                    {info.nombrePaciente || info.pacienteNombre}
+                  <Text
+                    style={[
+                      styles.slotText,
+                      info && { color: "#000", fontWeight: "bold" },
+                    ]}
+                  >
+                    {h}
                   </Text>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+                  {info?.esInicio && (
+                    <Text style={styles.pacienteTag} numberOfLines={1}>
+                      {info.NombrePaciente || info.pacienteNombre}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          {/* Panel inferior de Citas Atendidas */}
+          <View style={styles.reportFooter}>
+            <View style={styles.reportHeaderRow}>
+              <MaterialCommunityIcons
+                name="chart-box"
+                size={18}
+                color={COLORS.darkGreen}
+              />
+              <Text style={styles.reportTitle}>
+                Citas Atendidas Hoy ({fechaSel})
+              </Text>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.reportScroll}
+            >
+              {listaMedicos.map((m) => (
+                <View key={m.id} style={styles.reportBadge}>
+                  <Text style={styles.reportDoctorName}>{m.medico}: </Text>
+                  <Text style={styles.reportDoctorCount}>
+                    {reporteCitasCerradas[m.medico] || 0} atendidas
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
       ) : (
         <View style={{ flex: 1, padding: 15 }}>
           <TextInput
@@ -461,6 +559,7 @@ export default function AdminMasterPanel() {
                 item={item}
                 onUpdateMillas={handleUpdateMillas}
                 onIncrement={handleIncrementMillas}
+                onUpdateHC={handleUpdateHC}
               />
             )}
           />
@@ -472,12 +571,56 @@ export default function AdminMasterPanel() {
         <View style={styles.editPanel}>
           <Text style={styles.editPanelTitle}>
             Paciente:{" "}
-            {citaEnEdicion.nombrePaciente || citaEnEdicion.pacienteNombre}
+            {citaEnEdicion.NombrePaciente || citaEnEdicion.pacienteNombre}
           </Text>
+
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              marginBottom: 12,
+            }}
+          >
+            <Text style={styles.label}>Estado actual: </Text>
+            <View
+              style={[
+                styles.statusTag,
+                citaEnEdicion.estado === "pendiente" && {
+                  backgroundColor: "#FFF3E0",
+                },
+                citaEnEdicion.estado === "aprobado" && {
+                  backgroundColor: "#E3F2FD",
+                },
+                citaEnEdicion.estado === "confirmado" && {
+                  backgroundColor: "#FFEBEE",
+                },
+                citaEnEdicion.estado === "finalizado" && {
+                  backgroundColor: "#E8F5E9",
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.statusTagText,
+                  citaEnEdicion.estado === "pendiente" && { color: "#E65100" },
+                  citaEnEdicion.estado === "aprobado" && { color: "#0D47A1" },
+                  citaEnEdicion.estado === "confirmado" && { color: "#C62828" },
+                  citaEnEdicion.estado === "finalizado" && { color: "#2E7D32" },
+                ]}
+              >
+                {(citaEnEdicion.estado || "pendiente").toUpperCase()}
+              </Text>
+            </View>
+          </View>
+
           <Text style={styles.label}>
             Reasignar médico para las {citaEnEdicion.hora}:
           </Text>
-          <ScrollView horizontal style={{ marginBottom: 15 }}>
+          <ScrollView
+            horizontal
+            style={{ marginBottom: 15, maxHeight: 40 }}
+            showsHorizontalScrollIndicator={false}
+          >
             {listaMedicos.map((m) => (
               <TouchableOpacity
                 key={m.id}
@@ -487,101 +630,183 @@ export default function AdminMasterPanel() {
                   nuevoMedicoParaCita === m.medico && styles.tabActive,
                 ]}
               >
-                <Text style={styles.tabText}>{m.medico}</Text>
+                <Text
+                  style={[
+                    styles.tabText,
+                    nuevoMedicoParaCita !== m.medico && { color: "#333" },
+                  ]}
+                >
+                  {m.medico}
+                </Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
-          <View style={{ flexDirection: "row" }}>
+
+          {/* ACCIONES DINÁMICAS */}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {citaEnEdicion.estado === "pendiente" && (
+              <TouchableOpacity
+                onPress={async () => {
+                  setLoading(true);
+                  await updateDoc(doc(db, "citas", citaEnEdicion.id), {
+                    estado: "aprobado",
+                  });
+                  setCitaEnEdicion(null);
+                  setLoading(false);
+                }}
+                style={[styles.btnAction, { backgroundColor: "#2196F3" }]}
+              >
+                <MaterialCommunityIcons
+                  name="check-circle-outline"
+                  size={16}
+                  color="#fff"
+                />
+                <Text style={styles.btnActionText}> APROBAR CITA</Text>
+              </TouchableOpacity>
+            )}
+
+            {citaEnEdicion.estado === "aprobado" && (
+              <TouchableOpacity
+                onPress={async () => {
+                  setLoading(true);
+                  await updateDoc(doc(db, "citas", citaEnEdicion.id), {
+                    estado: "confirmado",
+                  });
+                  setCitaEnEdicion(null);
+                  setLoading(false);
+                }}
+                style={[styles.btnAction, { backgroundColor: "#4CAF50" }]}
+              >
+                <MaterialCommunityIcons
+                  name="whatsapp"
+                  size={16}
+                  color="#fff"
+                />
+                <Text style={styles.btnActionText}> CLIENTE CONFIRMÓ</Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
-              onPress={guardarCambioMedico}
-              style={styles.btnSave}
+              onPress={() => guardarCambioMedico()}
+              style={[
+                styles.btnAction,
+                { backgroundColor: COLORS.primaryGreen },
+              ]}
             >
-              <Text style={{ color: "#fff", fontWeight: "bold" }}>GUARDAR</Text>
+              <MaterialCommunityIcons
+                name="content-save"
+                size={16}
+                color="#fff"
+              />
+              <Text style={styles.btnActionText}> GUARDAR CAMBIOS</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              onPress={async () => {
-                await updateDoc(doc(db, "citas", citaEnEdicion.id), {
-                  estado: "finalizado",
-                });
-                setCitaEnEdicion(null);
-              }}
-              style={styles.btnDone}
-            >
-              <Text style={{ color: "#fff", fontWeight: "bold" }}>
-                FINALIZAR
-              </Text>
-            </TouchableOpacity>
+
+            {citaEnEdicion.estado !== "pendiente" && (
+              <TouchableOpacity
+                onPress={async () => {
+                  setLoading(true);
+                  await updateDoc(doc(db, "citas", citaEnEdicion.id), {
+                    estado: "finalizado",
+                  });
+                  setCitaEnEdicion(null);
+                  setLoading(false);
+                }}
+                style={[styles.btnAction, { backgroundColor: "#9C27B0" }]}
+              >
+                <MaterialCommunityIcons
+                  name="account-check"
+                  size={16}
+                  color="#fff"
+                />
+                <Text style={styles.btnActionText}> FINALIZAR</Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
               onPress={() => setCitaEnEdicion(null)}
-              style={styles.btnCancel}
+              style={styles.btnCancelText}
             >
-              <Text style={{ color: "#000" }}>CERRAR</Text>
+              <Text style={{ color: "#666", fontWeight: "bold" }}>CERRAR</Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
 
       {/* MODAL WHATSAPP */}
-      <Modal visible={modalVisible} animationType="slide" transparent={true}>
+      {/* MODAL WHATSAPP */}
+      <Modal
+        visible={modalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setModalVisible(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Confirmaciones de Mañana</Text>
+
             <View style={styles.bulkActions}>
               <TouchableOpacity
                 onPress={() =>
-                  setCitasManana(
-                    citasManana.map((c) => ({ ...c, seleccionado: true })),
+                  setCitasManana((prev) =>
+                    prev.map((c) => ({ ...c, seleccionado: true })),
                   )
                 }
               >
                 <Text style={styles.actionLink}>Todos</Text>
               </TouchableOpacity>
+
               <TouchableOpacity
                 onPress={() =>
-                  setCitasManana(
-                    citasManana.map((c) => ({ ...c, seleccionado: false })),
+                  setCitasManana((prev) =>
+                    prev.map((c) => ({ ...c, seleccionado: false })),
                   )
                 }
               >
                 <Text style={styles.actionLink}>Ninguno</Text>
               </TouchableOpacity>
             </View>
+
             <FlatList
               data={citasManana}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  onPress={() =>
-                    setCitasManana(
-                      citasManana.map((c) =>
-                        c.id === item.id
-                          ? { ...c, seleccionado: !c.seleccionado }
-                          : c,
-                      ),
-                    )
-                  }
-                  style={styles.waItem}
-                >
-                  <MaterialCommunityIcons
-                    name={
-                      item.seleccionado
-                        ? "checkbox-marked"
-                        : "checkbox-blank-outline"
+              keyExtractor={(item) => item.id.toString()} // Asegura que sea un string para evitar warnings
+              removeClippedSubviews={Platform.OS === "android"}
+              renderItem={({ item }) => {
+                // EXPLICACIÓN: Abrimos llaves limpias aquí para procesar el retorno del componente de forma segura
+                return (
+                  <TouchableOpacity
+                    onPress={() =>
+                      setCitasManana((prev) =>
+                        prev.map((c) =>
+                          c.id === item.id
+                            ? { ...c, seleccionado: !c.seleccionado }
+                            : c,
+                        ),
+                      )
                     }
-                    size={24}
-                    color={COLORS.primaryGreen}
-                  />
-                  <View style={{ marginLeft: 10 }}>
-                    <Text style={styles.waName}>
-                      {item.nombrePaciente || item.pacienteNombre}
-                    </Text>
-                    <Text style={styles.waSub}>
-                      {item.hora} - {item.medico}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              )}
+                    style={styles.waItem}
+                  >
+                    <MaterialCommunityIcons
+                      name={
+                        item.seleccionado
+                          ? "checkbox-marked"
+                          : "checkbox-blank-outline"
+                      }
+                      size={24}
+                      color={COLORS.primaryGreen}
+                    />
+                    <View style={{ marginLeft: 10 }}>
+                      <Text style={styles.waName}>
+                        {item.NombrePaciente || item.pacienteNombre}
+                      </Text>
+                      <Text style={styles.waSub}>
+                        {item.hora} - {item.medico}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
             />
+
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={styles.btnCancel}
@@ -589,6 +814,7 @@ export default function AdminMasterPanel() {
               >
                 <Text style={styles.btnTextBlack}>Cerrar</Text>
               </TouchableOpacity>
+
               <TouchableOpacity
                 style={styles.btnSendAll}
                 onPress={enviarSeleccionados}
@@ -599,44 +825,63 @@ export default function AdminMasterPanel() {
           </View>
         </View>
       </Modal>
-
       {/* MODAL MÉDICOS */}
-      <Modal visible={modalMedicos} transparent animationType="fade">
+      <Modal
+        visible={modalMedicos}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalMedicos(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Especialidades y Doctores</Text>
-            {listaMedicos.map((m) => (
-              <View key={m.id} style={{ marginBottom: 10 }}>
-                <Text
-                  style={{
-                    fontSize: 11,
-                    color: COLORS.primaryGreen,
-                    fontWeight: "bold",
-                  }}
-                >
-                  {m.nombre}
-                </Text>
-                <TextInput
-                  style={styles.inputEdit}
-                  defaultValue={m.medico}
-                  onEndEditing={(e) =>
-                    updateDoc(doc(db, "especialidades", m.id), {
-                      medico: e.nativeEvent.text,
-                    })
-                  }
-                />
-              </View>
-            ))}
+
+            <FlatList
+              data={listaMedicos}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <View style={{ marginBottom: 10, width: "100%" }}>
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      color: COLORS.primaryGreen,
+                      fontWeight: "bold",
+                    }}
+                  >
+                    {item.nombre}
+                  </Text>
+                  <TextInput
+                    style={styles.inputEdit}
+                    defaultValue={item.medico}
+                    placeholder="Nombre del médico"
+                    onEndEditing={async (e) => {
+                      const nuevoTexto = e.nativeEvent.text.trim();
+                      if (nuevoTexto && nuevoTexto !== item.medico) {
+                        try {
+                          await updateDoc(doc(db, "especialidades", item.id), {
+                            medico: nuevoTexto,
+                          });
+                        } catch (error) {
+                          console.error("Error al actualizar médico:", error);
+                        }
+                      }
+                    }}
+                  />
+                </View>
+              )}
+            />
+
             <TouchableOpacity
               onPress={() => setModalMedicos(false)}
               style={styles.btnClose}
             >
-              <Text style={{ color: "#fff" }}>Cerrar</Text>
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>Cerrar</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
+      {/* INDICADOR DE CARGA */}
       {loading && (
         <ActivityIndicator
           style={styles.loader}
@@ -647,7 +892,6 @@ export default function AdminMasterPanel() {
     </View>
   );
 }
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F4F6F8" },
   header: {
@@ -690,10 +934,6 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 350,
     elevation: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
   },
   calendarButtonText: {
     color: "#fff",
@@ -706,7 +946,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    paddingBottom: 120,
+    paddingBottom: 20,
     marginTop: 10,
   },
   slot: {
@@ -727,7 +967,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: "#333",
   },
-  bgRojo: { backgroundColor: "#FF5252" },
+  bgRojo: { backgroundColor: "#FF5252", borderColor: "#FF5252" },
   searchBar: {
     backgroundColor: "#fff",
     padding: 10,
@@ -742,9 +982,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  hcInput: {
+    backgroundColor: "#F4F6F8",
+    width: 110,
+    borderRadius: 8,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    fontSize: 12,
+    color: "#333",
+    fontWeight: "600",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
   millasInput: {
     backgroundColor: "#F0F0F0",
-    width: 65,
+    width: 55,
     textAlign: "center",
     borderRadius: 8,
     padding: 5,
@@ -770,30 +1022,47 @@ const styles = StyleSheet.create({
     padding: 20,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
-    elevation: 20,
+    elevation: 25,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
   },
-  editPanelTitle: { fontWeight: "bold", fontSize: 15, marginBottom: 10 },
+  editPanelTitle: { fontWeight: "bold", fontSize: 15, marginBottom: 5 },
+  label: { fontSize: 12, fontWeight: "600", color: "#444", marginBottom: 5 },
+  statusTag: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginLeft: 10,
+  },
+  statusTagText: { fontSize: 10, fontWeight: "bold" },
   miniTab: {
-    padding: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 15,
     backgroundColor: "#EEE",
     borderRadius: 10,
     marginRight: 5,
+    justifyContent: "center",
+    height: 32,
   },
-  btnSave: {
-    backgroundColor: COLORS.primaryGreen,
+  btnAction: {
+    flexDirection: "row",
     padding: 12,
     borderRadius: 12,
-    flex: 1,
-    marginRight: 5,
     alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+    minWidth: 140,
   },
-  btnDone: {
-    backgroundColor: "#2196F3",
+  btnActionText: { color: "#fff", fontWeight: "bold", fontSize: 11 },
+  btnCancelText: {
+    backgroundColor: "#F0F0F0",
     padding: 12,
     borderRadius: 12,
-    flex: 1,
-    marginRight: 5,
     alignItems: "center",
+    justifyContent: "center",
+    minWidth: 80,
   },
   btnCancel: {
     backgroundColor: "#F0F0F0",
@@ -847,4 +1116,53 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   loader: { position: "absolute", top: "50%", alignSelf: "center" },
+
+  // ESTILOS REPORTE SUPERIOR DE CITAS CERRADAS
+  reportFooter: {
+    backgroundColor: "#fff",
+    padding: 14,
+    borderTopWidth: 1,
+    borderColor: "#E2E8F0",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+  },
+  reportHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  reportTitle: {
+    fontSize: 13,
+    fontWeight: "bold",
+    color: "#1E293B",
+    marginLeft: 6,
+  },
+  reportScroll: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  reportBadge: {
+    flexDirection: "row",
+    backgroundColor: "#E8F5E9",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#C8E6C9",
+    alignItems: "center",
+  },
+  reportDoctorName: {
+    fontSize: 11,
+    fontWeight: "bold",
+    color: "#1B5E20",
+  },
+  reportDoctorCount: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#2E7D32",
+  },
 });
