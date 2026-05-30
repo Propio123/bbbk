@@ -1,9 +1,18 @@
 {
   "cleanUrls": true,
+  "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/_expo/(.*)",
+      "destination": "/_expo/$1"
+    },
+    {
+      "source": "/static/(.*)",
+      "destination": "/static/$1"
+    },
+    {
       "source": "/(.*)",
-      "destination": "/app/index.js"
+      "destination": "/index.html"
     }
   ]
 }
