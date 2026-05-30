@@ -1,18 +1,22 @@
 {
+  "version": 2,
   "cleanUrls": true,
-  "trailingSlash": false,
-  "rewrites": [
+  "routes": [
     {
-      "source": "/_expo/(.*)",
-      "destination": "/_expo/$1"
+      "src": "/_expo/(.*)",
+      "dest": "/_expo/$1"
     },
     {
-      "source": "/static/(.*)",
-      "destination": "/static/$1"
+      "src": "/assets/(.*)",
+      "dest": "/assets/$1"
     },
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "src": "/metadata(.*)",
+      "dest": "/metadata$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
     }
   ]
 }
