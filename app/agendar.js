@@ -76,7 +76,7 @@ const SERVICIOS = [
     id: "gen",
     nombre: "General",
     duracion: 30,
-    medicos: ["Dr. Darwin Congo", "Dra. Kati Amatima", "Dra. Doménica Palma"],
+    medicos: ["Dra. Kati Amatima", "Dra. Doménica Palma"],
     img: {
       uri: "https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=500",
     },
@@ -153,7 +153,7 @@ const SERVICIOS = [
     id: "rx",
     nombre: "Rayos X",
     duracion: 60,
-    medicos: [],
+    medicos: [], // Servicio sin médicos fijos
     img: {
       uri: "https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=500",
     },
@@ -172,8 +172,16 @@ const AgendarCitaClient = () => {
   const [loading, setLoading] = useState(false);
   const [bloquesOcupados, setBloquesOcupados] = useState([]);
 
-  // Validación estricta: 'medicoSel' no puede ser un placeholder para habilitar los pasos siguientes
-  const tieneMedicoValido = medicoSel && medicoSel !== "Médico por asignar";
+  // NUEVA LÓGICA: Evaluamos si el servicio actual requiere o no elegir médico obligatoriamente
+  const servicioRequiereMedico = servicioSel && servicioSel.medicos.length > 0;
+
+  // El paso del médico es válido si ya seleccionó uno REAL o si el servicio directamente no tiene médicos asociados
+  const tieneMedicoValido = useMemo(() => {
+    if (!servicioSel) return false;
+    if (!servicioRequiereMedico) return true; // Avanza directo si no hay médicos en la lista nativa
+    return medicoSel && medicoSel !== "Médico por asignar";
+  }, [servicioSel, medicoSel, servicioRequiereMedico]);
+
   const estaListo = servicioSel && tieneMedicoValido && fechaSel && horaSel;
 
   const getHoyLocal = () => {
@@ -191,12 +199,16 @@ const AgendarCitaClient = () => {
   }, [servicioSel]);
 
   useEffect(() => {
-    if (!fechaSel || !tieneMedicoValido) return;
+    if (!fechaSel || !servicioSel) return;
+
+    // Si el servicio no tiene médicos, buscamos la agenda general del servicio o enviamos vacío
+    const medicoQuery = servicioRequiereMedico ? medicoSel : "Por asignar";
+    if (servicioRequiereMedico && !medicoSel) return;
 
     const q = query(
       collection(db, "agenda_medica"),
       where("fecha", "==", fechaSel),
-      where("medico", "==", medicoSel),
+      where("medico", "==", medicoQuery),
       where("estado", "in", ["pendiente", "confirmada"]),
     );
 
@@ -224,14 +236,17 @@ const AgendarCitaClient = () => {
 
         if (horaSel && occupied.includes(horaSel)) {
           setHoraSel(null);
+          const nombreAviso = servicioRequiereMedico
+            ? medicoSel
+            : servicioSel.nombre;
           if (Platform.OS === "web") {
             alert(
-              `El horario de las ${horaSel} ya no está disponible para el ${medicoSel}.`,
+              `El horario de las ${horaSel} ya no está disponible para ${nombreAviso}.`,
             );
           } else {
             Alert.alert(
               "Aviso",
-              `El horario de las ${horaSel} ya no está disponible para el ${medicoSel}.`,
+              `El horario de las ${horaSel} ya no está disponible para ${nombreAviso}.`,
             );
           }
         }
@@ -242,7 +257,7 @@ const AgendarCitaClient = () => {
     );
 
     return () => unsubscribe();
-  }, [fechaSel, medicoSel]);
+  }, [fechaSel, medicoSel, servicioSel]);
 
   const horariosFiltrados = useMemo(() => {
     const slots = [];
@@ -304,24 +319,9 @@ const AgendarCitaClient = () => {
             console.log("I2 fallido:", e2.message);
           }
         }
-
-        if (nombreRealPaciente === "Paciente Registrado" && user.email) {
-          try {
-            const qEmail = query(
-              collection(db, "users"),
-              where("email", "==", user.email),
-            );
-            const querySnapshotEmail = await getDocs(qEmail);
-            if (!querySnapshotEmail.empty) {
-              const data = querySnapshotEmail.docs[0].data();
-              if (data.nombre) nombreRealPaciente = data.nombre.trim();
-              if (data.telefono) telefonoRealPaciente = data.telefono;
-            }
-          } catch (e3) {
-            console.log("I3 fallido:", e3.message);
-          }
-        }
       }
+
+      const medicoFinal = servicioRequiereMedico ? medicoSel : "Por asignar";
 
       const docCitaRef = await addDoc(collection(db, "citas"), {
         pacienteId: user ? user.uid : "anonimo",
@@ -331,14 +331,14 @@ const AgendarCitaClient = () => {
         duracion: servicioSel.duracion,
         fecha: fechaSel,
         hora: horaSel,
-        medico: medicoSel,
+        medico: medicoFinal,
         estado: "pendiente",
         creadoEn: serverTimestamp(),
       });
 
       await addDoc(collection(db, "agenda_medica"), {
         citaId: docCitaRef.id,
-        medico: medicoSel,
+        medico: medicoFinal,
         fecha: fechaSel,
         hora: horaSel,
         duracion: servicioSel.duracion,
@@ -349,7 +349,7 @@ const AgendarCitaClient = () => {
         `🦷 *Nueva Solicitud de Cita*\n\n` +
         `👤 *Paciente:* ${nombreRealPaciente}\n` +
         `✨ *Servicio:* ${servicioSel.nombre}\n` +
-        `👨‍⚕️ *Médico:* ${medicoSel}\n` +
+        `👨‍⚕️ *Médico:* ${medicoFinal}\n` +
         `🗓️ *Fecha:* ${fechaSel}\n` +
         `⏰ *Hora:* ${horaSel}\n\n` +
         `Por favor, confirmar disponibilidad. ¡Muchas gracias!`;
@@ -434,7 +434,9 @@ const AgendarCitaClient = () => {
                   setMedicoSel(null);
                   setFechaSel(null);
                   setHoraSel(null);
-                  scrollRef.current?.scrollTo({ y: 380, animated: true });
+                  // Desplazamiento inteligente condicional
+                  const proxY = item.medicos.length > 0 ? 380 : 620;
+                  scrollRef.current?.scrollTo({ y: proxY, animated: true });
                 }}
               >
                 <ImageBackground
@@ -456,59 +458,74 @@ const AgendarCitaClient = () => {
           </View>
         </View>
 
-        {/* PASO 2: Selección del Médico Protegida */}
+        {/* PASO 2 */}
         <View style={styles.section}>
           <Text style={[styles.label, !servicioSel && styles.disabledText]}>
             2. Selecciona el Profesional
           </Text>
           {servicioSel ? (
-            <View style={styles.grid}>
-              {medicosGrid.map((medico, index) => {
-                const esPlaceholder = medico === "Médico por asignar";
-                return (
-                  <TouchableOpacity
-                    key={`${medico}-${index}`}
-                    disabled={esPlaceholder} // <-- SE DESHABILITA EL CLICK POR COMPLETO
-                    activeOpacity={esPlaceholder ? 1 : 0.7}
-                    style={[
-                      styles.doctorCard,
-                      medicoSel === medico && styles.doctorCardActive,
-                      esPlaceholder && styles.doctorCardDisabled,
-                    ]}
-                    onPress={() => {
-                      setMedicoSel(medico);
-                      setFechaSel(null);
-                      setHoraSel(null);
-                      scrollRef.current?.scrollTo({ y: 720, animated: true });
-                    }}
-                  >
-                    <MaterialCommunityIcons
-                      name={esPlaceholder ? "account-lock-outline" : "doctor"}
-                      size={24}
-                      color={
-                        medicoSel === medico
-                          ? "#fff"
-                          : esPlaceholder
-                            ? "#A5A5A5"
-                            : COLORS.primaryGreen || "#8CC63F"
-                      }
-                    />
-                    <Text
+            servicioRequiereMedico ? (
+              <View style={styles.grid}>
+                {medicosGrid.map((medico, index) => {
+                  const esPlaceholder = medico === "Médico por asignar";
+                  return (
+                    <TouchableOpacity
+                      key={`${medico}-${index}`}
+                      disabled={esPlaceholder}
+                      activeOpacity={esPlaceholder ? 1 : 0.7}
                       style={[
-                        styles.doctorText,
-                        medicoSel === medico && { color: "#fff" },
-                        esPlaceholder && {
-                          color: "#A5A5A5",
-                          fontStyle: "italic",
-                        },
+                        styles.doctorCard,
+                        medicoSel === medico && styles.doctorCardActive,
+                        esPlaceholder && styles.doctorCardDisabled,
                       ]}
+                      onPress={() => {
+                        setMedicoSel(medico);
+                        setFechaSel(null);
+                        setHoraSel(null);
+                        scrollRef.current?.scrollTo({ y: 720, animated: true });
+                      }}
                     >
-                      {medico}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+                      <MaterialCommunityIcons
+                        name={esPlaceholder ? "account-lock-outline" : "doctor"}
+                        size={24}
+                        color={
+                          medicoSel === medico
+                            ? "#fff"
+                            : esPlaceholder
+                              ? "#A5A5A5"
+                              : COLORS.primaryGreen || "#8CC63F"
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.doctorText,
+                          medicoSel === medico && { color: "#fff" },
+                          esPlaceholder && {
+                            color: "#A5A5A5",
+                            fontStyle: "italic",
+                          },
+                        ]}
+                      >
+                        {medico}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={styles.infoCardAviso}>
+                <MaterialCommunityIcons
+                  name="information-outline"
+                  size={22}
+                  color="#0288D1"
+                />
+                <Text style={styles.infoCardAvisoText}>
+                  Este servicio no requiere la selección de un especialista
+                  específico. Puedes elegir directamente la fecha y hora de tu
+                  preferencia a continuación.
+                </Text>
+              </View>
+            )
           ) : (
             <Text style={styles.placeholderText}>
               Selecciona primero un servicio para ver doctores disponibles.
@@ -525,7 +542,7 @@ const AgendarCitaClient = () => {
           </Text>
           <Calendar
             minDate={getHoyLocal()}
-            disabledByDefault={!tieneMedicoValido} // <-- BLOQUEADO SI ES UN PLACEHOLDER
+            disabledByDefault={!tieneMedicoValido}
             onDayPress={(day) => {
               if (!tieneMedicoValido) return;
               setFechaSel(day.dateString);
@@ -576,14 +593,15 @@ const AgendarCitaClient = () => {
               ))
             ) : (
               <Text style={styles.placeholderText}>
-                Selecciona un profesional y una fecha para consultar horarios.
+                Selecciona una fecha válida en el calendario para consultar
+                horarios.
               </Text>
             )}
           </View>
         </View>
       </ScrollView>
 
-      {/* Botón Flotante con Validación Completa */}
+      {/* Botón Flotante */}
       {servicioSel && (
         <TouchableOpacity
           style={[
@@ -686,10 +704,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#EAEAEA",
     elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1.41,
   },
   doctorCardActive: {
     backgroundColor: COLORS.primaryGreen || "#8CC63F",
@@ -707,6 +721,23 @@ const styles = StyleSheet.create({
     color: "#444",
     textAlign: "center",
     marginTop: 8,
+  },
+  infoCardAviso: {
+    flexDirection: "row",
+    backgroundColor: "#E1F5FE",
+    padding: 15,
+    borderRadius: 12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#B3E5FC",
+  },
+  infoCardAvisoText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#01579B",
+    marginLeft: 10,
+    lineHeight: 18,
+    fontWeight: "500",
   },
   calendar: { borderRadius: 15, elevation: 2, padding: 10 },
   timeGrid: {
