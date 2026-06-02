@@ -335,7 +335,11 @@ export default function AdminMasterPanel() {
         tel = "593" + tel;
       }
 
-      const msg = `Hola ${cita.NombrePaciente}, le saluda bbbkodontologia. Confirmamos su cita para mañana a las ${cita.hora}. ¿Nos confirma su asistencia?`;
+      const msg = `👋 Hola ${cita.NombrePaciente}, le saludamos de BBBK Odontología.
+
+Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}. Por favor, confirme su asistencia respondiendo a este mensaje.
+
+¡Será un gusto atenderle! 🦷 `;
       const url = `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`;
 
       try {
