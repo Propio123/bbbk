@@ -186,7 +186,40 @@ export default function AdminMasterPanel() {
       setLoading(false);
     }
   };
-
+  // --- ACCIÓN PARA LIBERAR CITA ---
+  const handleLiberarCita = (cita) => {
+    Alert.alert(
+      "Liberar Bloque Horario",
+      `¿Estás seguro de que deseas cancelar y liberar la cita de las ${cita.hora} para el paciente ${cita.NombrePaciente || cita.pacienteNombre}?`,
+      [
+        { text: "No, mantener", style: "cancel" },
+        {
+          text: "Sí, liberar espacio",
+          style: "destructive",
+          onPress: async () => {
+            setLoading(true);
+            try {
+              // Eliminamos la cita de la base de datos para dejar el espacio libre
+              await deleteDoc(doc(db, "citas", cita.id));
+              setCitaEnEdicion(null);
+              Alert.alert(
+                "Éxito",
+                "El espacio horario ha sido liberado correctamente.",
+              );
+            } catch (e) {
+              console.error(e);
+              Alert.alert(
+                "Error",
+                "No se pudo liberar la cita en el servidor.",
+              );
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ],
+    );
+  };
   const handleEliminarMedico = (id, nombreDoc) => {
     Alert.alert(
       "Confirmar Eliminación",
@@ -697,6 +730,7 @@ export default function AdminMasterPanel() {
             ))}
           </ScrollView>
 
+          {/* BOTONES DE ACCIÓN DE LA CITA */}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {citaEnEdicion.estado === "pendiente" && (
               <TouchableOpacity
@@ -773,6 +807,21 @@ export default function AdminMasterPanel() {
                   color="#fff"
                 />
                 <Text style={styles.btnActionText}> FINALIZAR</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* NUEVO BOTÓN: LIBERAR / CANCELAR CITA */}
+            {citaEnEdicion.estado !== "finalizado" && (
+              <TouchableOpacity
+                onPress={() => handleLiberarCita(citaEnEdicion)}
+                style={[styles.btnAction, { backgroundColor: "#FF5252" }]}
+              >
+                <MaterialCommunityIcons
+                  name="calendar-remove"
+                  size={16}
+                  color="#fff"
+                />
+                <Text style={styles.btnActionText}> CANCELAR / LIBERAR</Text>
               </TouchableOpacity>
             )}
 
