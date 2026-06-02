@@ -17,7 +17,7 @@ import {
   Alert,
   ImageBackground,
   Linking,
-  Platform, // <-- AGREGADO PARA DETECTAR WEB VS NATIVO
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -28,7 +28,6 @@ import { Calendar, LocaleConfig } from "react-native-calendars";
 import { auth, db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
 
-// Configuración de idioma para el calendario
 LocaleConfig.locales["es"] = {
   monthNames: [
     "Enero",
@@ -173,7 +172,9 @@ const AgendarCitaClient = () => {
   const [loading, setLoading] = useState(false);
   const [bloquesOcupados, setBloquesOcupados] = useState([]);
 
-  const estaListo = servicioSel && medicoSel && fechaSel && horaSel;
+  // Validación estricta: 'medicoSel' no puede ser un placeholder para habilitar los pasos siguientes
+  const tieneMedicoValido = medicoSel && medicoSel !== "Médico por asignar";
+  const estaListo = servicioSel && tieneMedicoValido && fechaSel && horaSel;
 
   const getHoyLocal = () => {
     const d = new Date();
@@ -190,7 +191,7 @@ const AgendarCitaClient = () => {
   }, [servicioSel]);
 
   useEffect(() => {
-    if (!fechaSel || !medicoSel || medicoSel === "Médico por asignar") return;
+    if (!fechaSel || !tieneMedicoValido) return;
 
     const q = query(
       collection(db, "agenda_medica"),
@@ -223,10 +224,16 @@ const AgendarCitaClient = () => {
 
         if (horaSel && occupied.includes(horaSel)) {
           setHoraSel(null);
-          Alert.alert(
-            "Aviso",
-            `El horario de las ${horaSel} ya no está disponible para el ${medicoSel}.`,
-          );
+          if (Platform.OS === "web") {
+            alert(
+              `El horario de las ${horaSel} ya no está disponible para el ${medicoSel}.`,
+            );
+          } else {
+            Alert.alert(
+              "Aviso",
+              `El horario de las ${horaSel} ya no está disponible para el ${medicoSel}.`,
+            );
+          }
         }
       },
       (error) => {
@@ -262,13 +269,6 @@ const AgendarCitaClient = () => {
 
   const enviarSolicitud = async () => {
     if (!estaListo) return;
-    if (medicoSel === "Médico por asignar") {
-      Alert.alert(
-        "Aviso",
-        "Por favor selecciona un médico disponible para este servicio.",
-      );
-      return;
-    }
     setLoading(true);
     try {
       const user = auth.currentUser;
@@ -323,7 +323,6 @@ const AgendarCitaClient = () => {
         }
       }
 
-      // 1. Guardar la cita en Firebase
       const docCitaRef = await addDoc(collection(db, "citas"), {
         pacienteId: user ? user.uid : "anonimo",
         NombrePaciente: nombreRealPaciente,
@@ -346,7 +345,6 @@ const AgendarCitaClient = () => {
         estado: "pendiente",
       });
 
-      // 2. Mensaje y Alerta de confirmación inmediata al usuario (Feedback)
       const msg =
         `🦷 *Nueva Solicitud de Cita*\n\n` +
         `👤 *Paciente:* ${nombreRealPaciente}\n` +
@@ -356,7 +354,6 @@ const AgendarCitaClient = () => {
         `⏰ *Hora:* ${horaSel}\n\n` +
         `Por favor, confirmar disponibilidad. ¡Muchas gracias!`;
 
-      // Alerta nativa / Web alert para frenar clics dobles antes de saltar a WhatsApp
       if (Platform.OS === "web") {
         alert(
           "🎉 ¡Solicitud Registrada!\nSu cita ha sido guardada en nuestro sistema. A continuación se abrirá WhatsApp para enviar su comprobante.",
@@ -368,16 +365,14 @@ const AgendarCitaClient = () => {
         );
       }
 
-      // 3. Resolución Inteligente del enlace de WhatsApp según plataforma (Fija error en iOS/Android Web)
       const telefonoClinica = "593999036517";
       const whatsappUrl =
         Platform.OS === "web"
-          ? `https://wa.me/${telefonoClinica}?text=${encodeURIComponent(msg)}` // Enlace universal para navegadores móviles y desktop
-          : `whatsapp://send?phone=${telefonoClinica}&text=${encodeURIComponent(msg)}`; // Protocolo nativo rápido para la APK
+          ? `https://wa.me/${telefonoClinica}?text=${encodeURIComponent(msg)}`
+          : `whatsapp://send?phone=${telefonoClinica}&text=${encodeURIComponent(msg)}`;
 
       await Linking.openURL(whatsappUrl);
 
-      // Limpiar el formulario para dejar listo el espacio a una nueva cita
       setServicioSel(null);
       setMedicoSel(null);
       setFechaSel(null);
@@ -417,7 +412,7 @@ const AgendarCitaClient = () => {
 
           <View style={styles.stepIndicator}>
             <View style={[styles.step, servicioSel && styles.stepDone]} />
-            <View style={[styles.step, medicoSel && styles.stepDone]} />
+            <View style={[styles.step, tieneMedicoValido && styles.stepDone]} />
             <View style={[styles.step, fechaSel && styles.stepDone]} />
             <View style={[styles.step, horaSel && styles.stepDone]} />
           </View>
@@ -461,7 +456,7 @@ const AgendarCitaClient = () => {
           </View>
         </View>
 
-        {/* PASO 2 */}
+        {/* PASO 2: Selección del Médico Protegida */}
         <View style={styles.section}>
           <Text style={[styles.label, !servicioSel && styles.disabledText]}>
             2. Selecciona el Profesional
@@ -473,7 +468,8 @@ const AgendarCitaClient = () => {
                 return (
                   <TouchableOpacity
                     key={`${medico}-${index}`}
-                    disabled={esPlaceholder}
+                    disabled={esPlaceholder} // <-- SE DESHABILITA EL CLICK POR COMPLETO
+                    activeOpacity={esPlaceholder ? 1 : 0.7}
                     style={[
                       styles.doctorCard,
                       medicoSel === medico && styles.doctorCardActive,
@@ -487,7 +483,7 @@ const AgendarCitaClient = () => {
                     }}
                   >
                     <MaterialCommunityIcons
-                      name={esPlaceholder ? "account-clock-outline" : "doctor"}
+                      name={esPlaceholder ? "account-lock-outline" : "doctor"}
                       size={24}
                       color={
                         medicoSel === medico
@@ -522,14 +518,16 @@ const AgendarCitaClient = () => {
 
         {/* PASO 3 */}
         <View style={styles.section}>
-          <Text style={[styles.label, !medicoSel && styles.disabledText]}>
+          <Text
+            style={[styles.label, !tieneMedicoValido && styles.disabledText]}
+          >
             3. Selecciona la fecha
           </Text>
           <Calendar
             minDate={getHoyLocal()}
-            disabledByDefault={!medicoSel}
+            disabledByDefault={!tieneMedicoValido} // <-- BLOQUEADO SI ES UN PLACEHOLDER
             onDayPress={(day) => {
-              if (!medicoSel) return;
+              if (!tieneMedicoValido) return;
               setFechaSel(day.dateString);
               scrollRef.current?.scrollTo({ y: 1250, animated: true });
             }}
@@ -553,7 +551,7 @@ const AgendarCitaClient = () => {
             4. Elige el horario
           </Text>
           <View style={styles.timeGrid}>
-            {fechaSel ? (
+            {fechaSel && tieneMedicoValido ? (
               horariosFiltrados.map((item) => (
                 <TouchableOpacity
                   key={item.hora}
@@ -578,14 +576,14 @@ const AgendarCitaClient = () => {
               ))
             ) : (
               <Text style={styles.placeholderText}>
-                Selecciona una fecha para consultar horarios disponibles.
+                Selecciona un profesional y una fecha para consultar horarios.
               </Text>
             )}
           </View>
         </View>
       </ScrollView>
 
-      {/* Botón Flotante */}
+      {/* Botón Flotante con Validación Completa */}
       {servicioSel && (
         <TouchableOpacity
           style={[
