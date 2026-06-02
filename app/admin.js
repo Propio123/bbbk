@@ -3,7 +3,9 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { useRouter } from "expo-router";
 import { signOut } from "firebase/auth";
 import {
+  addDoc,
   collection,
+  deleteDoc,
   doc,
   getDocs,
   onSnapshot,
@@ -49,7 +51,6 @@ const ClienteItem = ({ item, onUpdateMillas, onIncrement, onUpdateHC }) => {
           {item.nombre || item.displayName || "Paciente"}
         </Text>
 
-        {/* Input para modificar la Historia Clínica */}
         <View
           style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}
         >
@@ -109,6 +110,10 @@ export default function AdminMasterPanel() {
   const [listaMedicos, setListaMedicos] = useState([]);
   const [medicoSel, setMedicoSel] = useState("");
 
+  // Formulario para nuevo médico
+  const [nuevoNombreMed, setNuevoNombreMed] = useState("");
+  const [nuevaEspecialidadMed, setNuevaEspecialidadMed] = useState("");
+
   // --- ESTADOS AGENDA ---
   const [fechaSel, setFechaSel] = useState(
     new Date().toISOString().split("T")[0],
@@ -156,6 +161,57 @@ export default function AdminMasterPanel() {
 
     return () => unsubData();
   }, [fechaSel, vistaActual]);
+
+  // --- ACCIONES CRUD MÉDICOS ---
+  const handleAgregarMedico = async () => {
+    if (!nuevoNombreMed.trim() || !nuevaEspecialidadMed.trim()) {
+      return Alert.alert(
+        "Campos vacíos",
+        "Por favor ingresa tanto el servicio/especialidad como el nombre del médico.",
+      );
+    }
+
+    setLoading(true);
+    try {
+      await addDoc(collection(db, "especialidades"), {
+        nombre: nuevaEspecialidadMed.trim(),
+        medico: nuevoNombreMed.trim(),
+      });
+      setNuevoNombreMed("");
+      setNuevaEspecialidadMed("");
+      Alert.alert("Éxito", "Especialista añadido correctamente.");
+    } catch (e) {
+      Alert.alert("Error", "No se pudo agregar al especialista.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEliminarMedico = (id, nombreDoc) => {
+    Alert.alert(
+      "Confirmar Eliminación",
+      `¿Estás seguro de que deseas eliminar al especialista ${nombreDoc}? Esto removerá su pestaña del panel.`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await deleteDoc(doc(db, "especialidades", id));
+              // Si eliminamos el médico que estaba seleccionado, reseteamos la pestaña activa
+              if (medicoSel === nombreDoc) setMedicoSel("");
+            } catch (e) {
+              Alert.alert("Error", "No se pudo eliminar el registro médico.");
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const handleUpdateMillas = async (userId, value) => {
     try {
@@ -287,7 +343,7 @@ export default function AdminMasterPanel() {
       });
       setCitaEnEdicion(null);
     } catch (e) {
-      Alert.alert("Error", "No se pudo reasignar el médico.");
+      Alert.alert("Error", "No se pudo reassignar el médico.");
     } finally {
       setLoading(false);
     }
@@ -343,7 +399,6 @@ export default function AdminMasterPanel() {
     );
   }, [clientes, busqueda]);
 
-  // Cálculo dinámico de citas finalizadas del día por médico
   const reporteCitasCerradas = useMemo(() => {
     const conteo = {};
     listaMedicos.forEach((m) => {
@@ -642,7 +697,6 @@ export default function AdminMasterPanel() {
             ))}
           </ScrollView>
 
-          {/* ACCIONES DINÁMICAS */}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {citaEnEdicion.estado === "pendiente" && (
               <TouchableOpacity
@@ -733,7 +787,6 @@ export default function AdminMasterPanel() {
       )}
 
       {/* MODAL WHATSAPP */}
-      {/* MODAL WHATSAPP */}
       <Modal
         visible={modalVisible}
         animationType="slide"
@@ -743,7 +796,6 @@ export default function AdminMasterPanel() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Confirmaciones de Mañana</Text>
-
             <View style={styles.bulkActions}>
               <TouchableOpacity
                 onPress={() =>
@@ -754,7 +806,6 @@ export default function AdminMasterPanel() {
               >
                 <Text style={styles.actionLink}>Todos</Text>
               </TouchableOpacity>
-
               <TouchableOpacity
                 onPress={() =>
                   setCitasManana((prev) =>
@@ -768,43 +819,40 @@ export default function AdminMasterPanel() {
 
             <FlatList
               data={citasManana}
-              keyExtractor={(item) => item.id.toString()} // Asegura que sea un string para evitar warnings
+              keyExtractor={(item) => item.id.toString()}
               removeClippedSubviews={Platform.OS === "android"}
-              renderItem={({ item }) => {
-                // EXPLICACIÓN: Abrimos llaves limpias aquí para procesar el retorno del componente de forma segura
-                return (
-                  <TouchableOpacity
-                    onPress={() =>
-                      setCitasManana((prev) =>
-                        prev.map((c) =>
-                          c.id === item.id
-                            ? { ...c, seleccionado: !c.seleccionado }
-                            : c,
-                        ),
-                      )
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  onPress={() =>
+                    setCitasManana((prev) =>
+                      prev.map((c) =>
+                        c.id === item.id
+                          ? { ...c, seleccionado: !c.seleccionado }
+                          : c,
+                      ),
+                    )
+                  }
+                  style={styles.waItem}
+                >
+                  <MaterialCommunityIcons
+                    name={
+                      item.seleccionado
+                        ? "checkbox-marked"
+                        : "checkbox-blank-outline"
                     }
-                    style={styles.waItem}
-                  >
-                    <MaterialCommunityIcons
-                      name={
-                        item.seleccionado
-                          ? "checkbox-marked"
-                          : "checkbox-blank-outline"
-                      }
-                      size={24}
-                      color={COLORS.primaryGreen}
-                    />
-                    <View style={{ marginLeft: 10 }}>
-                      <Text style={styles.waName}>
-                        {item.NombrePaciente || item.pacienteNombre}
-                      </Text>
-                      <Text style={styles.waSub}>
-                        {item.hora} - {item.medico}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              }}
+                    size={24}
+                    color={COLORS.primaryGreen}
+                  />
+                  <View style={{ marginLeft: 10 }}>
+                    <Text style={styles.waName}>
+                      {item.NombrePaciente || item.pacienteNombre}
+                    </Text>
+                    <Text style={styles.waSub}>
+                      {item.hora} - {item.medico}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
             />
 
             <View style={styles.modalFooter}>
@@ -814,7 +862,6 @@ export default function AdminMasterPanel() {
               >
                 <Text style={styles.btnTextBlack}>Cerrar</Text>
               </TouchableOpacity>
-
               <TouchableOpacity
                 style={styles.btnSendAll}
                 onPress={enviarSeleccionados}
@@ -825,48 +872,100 @@ export default function AdminMasterPanel() {
           </View>
         </View>
       </Modal>
-      {/* MODAL MÉDICOS */}
+
+      {/* MODAL MÉDICOS CRUD (AGREGAR, EDITAR, ELIMINAR) */}
       <Modal
         visible={modalMedicos}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setModalMedicos(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Especialidades y Doctores</Text>
+          <View style={[styles.modalContent, { maxHeight: "85%" }]}>
+            <Text style={styles.modalTitle}>Gestión del Staff Médico</Text>
+
+            {/* Formulario Inline para añadir un nuevo médico */}
+            <View style={styles.addDoctorForm}>
+              <Text style={styles.formSectionTitle}>
+                + Agregar Nuevo Especialista
+              </Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Servicio (ej: Ortodoncia, General)"
+                placeholderTextColor="#999"
+                value={nuevaEspecialidadMed}
+                onChangeText={setNuevaEspecialidadMed}
+              />
+              <TextInput
+                style={styles.formInput}
+                placeholder="Nombre (ej: Dra. Vanessa Nuñez)"
+                placeholderTextColor="#999"
+                value={nuevoNombreMed}
+                onChangeText={setNuevoNombreMed}
+              />
+              <TouchableOpacity
+                style={styles.btnAgregarForm}
+                onPress={handleAgregarMedico}
+              >
+                <MaterialCommunityIcons
+                  name="plus-circle"
+                  size={18}
+                  color="#fff"
+                />
+                <Text style={styles.btnAgregarFormText}>
+                  {" "}
+                  Guardar en Sistema
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.formSectionTitle, { marginTop: 15 }]}>
+              Lista de Doctores Activos
+            </Text>
 
             <FlatList
               data={listaMedicos}
               keyExtractor={(item) => item.id}
+              style={{ width: "100%" }}
               renderItem={({ item }) => (
-                <View style={{ marginBottom: 10, width: "100%" }}>
-                  <Text
-                    style={{
-                      fontSize: 11,
-                      color: COLORS.primaryGreen,
-                      fontWeight: "bold",
-                    }}
-                  >
-                    {item.nombre}
-                  </Text>
-                  <TextInput
-                    style={styles.inputEdit}
-                    defaultValue={item.medico}
-                    placeholder="Nombre del médico"
-                    onEndEditing={async (e) => {
-                      const nuevoTexto = e.nativeEvent.text.trim();
-                      if (nuevoTexto && nuevoTexto !== item.medico) {
-                        try {
-                          await updateDoc(doc(db, "especialidades", item.id), {
-                            medico: nuevoTexto,
-                          });
-                        } catch (error) {
-                          console.error("Error al actualizar médico:", error);
+                <View style={styles.doctorItemCrudRow}>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={styles.doctorItemCrudService}>
+                      {item.nombre}
+                    </Text>
+                    <TextInput
+                      style={styles.inputEdit}
+                      defaultValue={item.medico}
+                      placeholder="Nombre del médico"
+                      onEndEditing={async (e) => {
+                        const nuevoTexto = e.nativeEvent.text.trim();
+                        if (nuevoTexto && nuevoTexto !== item.medico) {
+                          try {
+                            await updateDoc(
+                              doc(db, "especialidades", item.id),
+                              {
+                                medico: nuevoTexto,
+                              },
+                            );
+                          } catch (error) {
+                            console.error("Error al actualizar médico:", error);
+                          }
                         }
-                      }
-                    }}
-                  />
+                      }}
+                    />
+                  </View>
+
+                  {/* Botón de Eliminación Segura */}
+                  <TouchableOpacity
+                    style={styles.btnEliminarDoctor}
+                    onPress={() => handleEliminarMedico(item.id, item.medico)}
+                  >
+                    <MaterialCommunityIcons
+                      name="trash-can-outline"
+                      size={22}
+                      color="#FF5252"
+                    />
+                  </TouchableOpacity>
                 </View>
               )}
             />
@@ -875,7 +974,9 @@ export default function AdminMasterPanel() {
               onPress={() => setModalMedicos(false)}
               style={styles.btnClose}
             >
-              <Text style={{ color: "#fff", fontWeight: "bold" }}>Cerrar</Text>
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                Finalizar
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -892,6 +993,366 @@ export default function AdminMasterPanel() {
     </View>
   );
 }
+
+// Asegúrate de añadir/revisar estos estilos en tu StyleSheet de abajo
+const styles = StyleSheet.create({
+  // ... Conservas tus estilos existentes idénticos ...
+  container: { flex: 1, backgroundColor: "#FAFAFA" },
+  header: {
+    paddingTop: 50,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    backgroundColor: COLORS.darkGreen || "#1A3A34",
+  },
+  headerTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  headerTitle: { fontSize: 18, color: "#fff", fontWeight: "bold" },
+  iconBtn: { marginLeft: 15, padding: 4 },
+  fechaTexto: { color: "#fff", fontSize: 12, marginTop: 10, opacity: 0.8 },
+  tab: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 15,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    marginRight: 8,
+  },
+  tabActive: { backgroundColor: COLORS.primaryGreen || "#8CC63F" },
+  tabText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+  miniTab: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: "#E0E0E0",
+    marginRight: 6,
+    justifyContent: "center",
+  },
+  calendarNavContainer: {
+    padding: 12,
+    backgroundColor: "#FFF",
+    borderBottomWidth: 1,
+    borderColor: "#EAEAEA",
+    alignItems: "center",
+  },
+  calendarButton: {
+    flexDirection: "row",
+    backgroundColor: COLORS.darkGreen || "#1A3A34",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    alignItems: "center",
+  },
+  calendarButtonText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "bold",
+    marginLeft: 8,
+  },
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    padding: 10,
+    justifyContent: "space-between",
+  },
+  slot: {
+    width: "23%",
+    paddingVertical: 14,
+    backgroundColor: "#FFF",
+    marginBottom: 8,
+    borderRadius: 8,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#EBEBEB",
+  },
+  slotText: { fontSize: 12, color: "#777" },
+  pacienteTag: {
+    fontSize: 9,
+    color: "#333",
+    marginTop: 4,
+    paddingHorizontal: 2,
+    textAlign: "center",
+  },
+  bgRojo: { backgroundColor: "#FFEBEE", borderColor: "#FFCDD2" },
+  searchBar: {
+    backgroundColor: "#FFF",
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#DDD",
+    marginBottom: 10,
+  },
+  clienteCard: {
+    flexDirection: "row",
+    backgroundColor: "#FFF",
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#EEE",
+    alignItems: "center",
+  },
+  hcInput: {
+    borderWidth: 1,
+    borderColor: "#DDD",
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    fontSize: 11,
+    width: 100,
+    color: "#333",
+    backgroundColor: "#F9F9F9",
+  },
+  millasInput: {
+    borderWidth: 1,
+    borderColor: "#DDD",
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    fontSize: 12,
+    width: 50,
+    textAlign: "center",
+    marginRight: 5,
+    backgroundColor: "#F9F9F9",
+  },
+  btnSmall: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: COLORS.primaryGreen || "#8CC63F",
+    borderRadius: 4,
+    marginLeft: 4,
+  },
+  btnText: { color: "#fff", fontSize: 11, fontWeight: "bold" },
+  btnTextBlack: { color: "#000", fontSize: 14, fontWeight: "bold" },
+  reportFooter: {
+    padding: 12,
+    backgroundColor: "#FFF",
+    borderTopWidth: 1,
+    borderColor: "#EAEAEA",
+  },
+  reportHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  reportTitle: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: "#333",
+    marginLeft: 6,
+  },
+  reportScroll: { paddingVertical: 2 },
+  reportBadge: {
+    flexDirection: "row",
+    backgroundColor: "#F5F5F5",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+  },
+  reportDoctorName: { fontSize: 11, fontWeight: "bold", color: "#555" },
+  reportDoctorCount: {
+    fontSize: 11,
+    color: COLORS.primaryGreen || "#8CC63F",
+    fontWeight: "600",
+  },
+  editPanel: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#FFF",
+    padding: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    elevation: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 5,
+  },
+  editPanelTitle: { fontSize: 15, fontWeight: "bold", marginBottom: 8 },
+  label: { fontSize: 13, color: "#555" },
+  statusTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+    marginLeft: 6,
+  },
+  statusTagText: { fontSize: 10, fontWeight: "bold" },
+  btnAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  btnActionText: { color: "#fff", fontSize: 11, fontWeight: "bold" },
+  btnCancelText: {
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 15,
+    marginTop: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContent: {
+    width: "100%",
+    backgroundColor: "#FFF",
+    borderRadius: 16,
+    padding: 20,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 12,
+    color: "#333",
+  },
+  bulkActions: {
+    flexDirection: "row",
+    gap: 15,
+    marginBottom: 10,
+    width: "100%",
+    justifyContent: "flex-end",
+  },
+  actionLink: {
+    color: COLORS.primaryGreen || "#8CC63F",
+    fontWeight: "bold",
+    fontSize: 13,
+  },
+  waItem: {
+    flexDirection: "row",
+    width: "100%",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: "#EEE",
+    alignItems: "center",
+  },
+  waName: { fontSize: 14, fontWeight: "bold" },
+  waSub: { fontSize: 11, color: "#666" },
+  modalFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+    marginTop: 15,
+  },
+  btnCancel: {
+    padding: 12,
+    borderRadius: 8,
+    width: "45%",
+    alignItems: "center",
+    backgroundColor: "#E0E0E0",
+  },
+  btnSendAll: {
+    padding: 12,
+    borderRadius: 8,
+    width: "45%",
+    alignItems: "center",
+    backgroundColor: "#25D366",
+  },
+  inputEdit: {
+    borderWidth: 1,
+    borderColor: "#DDD",
+    borderRadius: 8,
+    padding: 8,
+    fontSize: 13,
+    marginTop: 4,
+    color: "#333",
+    backgroundColor: "#FAFAFA",
+  },
+  btnClose: {
+    marginTop: 15,
+    backgroundColor: COLORS.darkGreen || "#1A3A34",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    width: "100%",
+    alignItems: "center",
+  },
+  loader: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    marginLeft: -25,
+    marginTop: -25,
+    zIndex: 999,
+  },
+
+  // NUEVOS ESTILOS AGREGADOS PARA EL CRUD DE MÉDICOS
+  addDoctorForm: {
+    width: "100%",
+    backgroundColor: "#F0F4F1",
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#DBE5DF",
+    marginBottom: 5,
+  },
+  formSectionTitle: {
+    fontSize: 13,
+    fontWeight: "bold",
+    color: "#333",
+    alignSelf: "flex-start",
+    marginBottom: 6,
+  },
+  formInput: {
+    backgroundColor: "#FFF",
+    borderWidth: 1,
+    borderColor: "#CCC",
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 12,
+    marginBottom: 8,
+    color: "#333",
+  },
+  btnAgregarForm: {
+    flexDirection: "row",
+    backgroundColor: COLORS.darkGreen || "#1A3A34",
+    paddingVertical: 8,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  btnAgregarFormText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "bold",
+  },
+  doctorItemCrudRow: {
+    flexDirection: "row",
+    width: "100%",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: "#EEE",
+  },
+  doctorItemCrudService: {
+    fontSize: 11,
+    color: COLORS.primaryGreen || "#8CC63F",
+    fontWeight: "bold",
+  },
+  btnEliminarDoctor: {
+    padding: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+});
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F4F6F8" },
   header: {
