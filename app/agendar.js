@@ -17,6 +17,7 @@ import {
   Alert,
   ImageBackground,
   Linking,
+  Platform, // <-- AGREGADO PARA DETECTAR WEB VS NATIVO
   ScrollView,
   StyleSheet,
   Text,
@@ -71,7 +72,6 @@ LocaleConfig.locales["es"] = {
 };
 LocaleConfig.defaultLocale = "es";
 
-// Estructura actualizada con la lista real de doctores provista
 const SERVICIOS = [
   {
     id: "gen",
@@ -100,7 +100,7 @@ const SERVICIOS = [
     id: "end",
     nombre: "Endodoncia",
     duracion: 60,
-    medicos: ["Dra. Vanessa Nuñez"], // Se autocompletará con un espacio libre mínimo
+    medicos: ["Dra. Vanessa Nuñez"],
     img: {
       uri: "https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=500",
     },
@@ -154,7 +154,7 @@ const SERVICIOS = [
     id: "rx",
     nombre: "Rayos X",
     duracion: 60,
-    medicos: [], // Caso vacío: mostrará mínimo dos espacios dinámicos
+    medicos: [],
     img: {
       uri: "https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=500",
     },
@@ -165,16 +165,14 @@ const AgendarCitaClient = () => {
   const router = useRouter();
   const scrollRef = useRef(null);
 
-  // Estados de la reserva
   const [servicioSel, setServicioSel] = useState(null);
-  const [medicoSel, setMedicoSel] = useState(null); // <-- NUEVO ESTADO
+  const [medicoSel, setMedicoSel] = useState(null);
   const [fechaSel, setFechaSel] = useState(null);
   const [horaSel, setHoraSel] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [bloquesOcupados, setBloquesOcupados] = useState([]);
 
-  // Evaluación de flujo completo
   const estaListo = servicioSel && medicoSel && fechaSel && horaSel;
 
   const getHoyLocal = () => {
@@ -182,18 +180,15 @@ const AgendarCitaClient = () => {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
 
-  // Generador dinámico de la grilla de médicos basados en el servicio seleccionado
   const medicosGrid = useMemo(() => {
     if (!servicioSel) return [];
     let lista = [...servicioSel.medicos];
-    // Relleno inteligente: si faltan médicos para el mínimo de 2, agregamos placeholders descriptivos
     while (lista.length < 2) {
       lista.push("Médico por asignar");
     }
     return lista;
   }, [servicioSel]);
 
-  // 1. Escucha de ocupación en tiempo real filtrado por médico específico y fecha seleccionada
   useEffect(() => {
     if (!fechaSel || !medicoSel || medicoSel === "Médico por asignar") return;
 
@@ -242,7 +237,6 @@ const AgendarCitaClient = () => {
     return () => unsubscribe();
   }, [fechaSel, medicoSel]);
 
-  // 2. Generación de horarios disponibles (8:00 AM - 6:00 PM)
   const horariosFiltrados = useMemo(() => {
     const slots = [];
     const ahora = new Date();
@@ -266,7 +260,6 @@ const AgendarCitaClient = () => {
     return slots;
   }, [fechaSel, bloquesOcupados]);
 
-  // 3. Envío y registro de la solicitud a Firebase
   const enviarSolicitud = async () => {
     if (!estaListo) return;
     if (medicoSel === "Médico por asignar") {
@@ -283,7 +276,6 @@ const AgendarCitaClient = () => {
       let telefonoRealPaciente = "";
 
       if (user) {
-        // Intento 1: ID Directo
         try {
           const directDocRef = doc(db, "users", user.uid);
           const directDocSnap = await getDoc(directDocRef);
@@ -296,7 +288,6 @@ const AgendarCitaClient = () => {
           console.log("I1 fallido:", e1.message);
         }
 
-        // Intento 2: Query por UID
         if (nombreRealPaciente === "Paciente Registrado") {
           try {
             const qUser = query(
@@ -314,7 +305,6 @@ const AgendarCitaClient = () => {
           }
         }
 
-        // Intento 3: Query por Email
         if (nombreRealPaciente === "Paciente Registrado" && user.email) {
           try {
             const qEmail = query(
@@ -333,7 +323,7 @@ const AgendarCitaClient = () => {
         }
       }
 
-      // Registro en la colección principal 'citas'
+      // 1. Guardar la cita en Firebase
       const docCitaRef = await addDoc(collection(db, "citas"), {
         pacienteId: user ? user.uid : "anonimo",
         NombrePaciente: nombreRealPaciente,
@@ -342,12 +332,11 @@ const AgendarCitaClient = () => {
         duracion: servicioSel.duracion,
         fecha: fechaSel,
         hora: horaSel,
-        medico: medicoSel, // Mapeado al médico elegido por el cliente
+        medico: medicoSel,
         estado: "pendiente",
         creadoEn: serverTimestamp(),
       });
 
-      // Bloqueo de agenda indexado por el médico elegido
       await addDoc(collection(db, "agenda_medica"), {
         citaId: docCitaRef.id,
         medico: medicoSel,
@@ -357,7 +346,7 @@ const AgendarCitaClient = () => {
         estado: "pendiente",
       });
 
-      // Mensaje estructurado para WhatsApp de la clínica
+      // 2. Mensaje y Alerta de confirmación inmediata al usuario (Feedback)
       const msg =
         `🦷 *Nueva Solicitud de Cita*\n\n` +
         `👤 *Paciente:* ${nombreRealPaciente}\n` +
@@ -367,11 +356,38 @@ const AgendarCitaClient = () => {
         `⏰ *Hora:* ${horaSel}\n\n` +
         `Por favor, confirmar disponibilidad. ¡Muchas gracias!`;
 
-      await Linking.openURL(
-        `whatsapp://send?phone=593999036517&text=${encodeURIComponent(msg)}`,
-      );
+      // Alerta nativa / Web alert para frenar clics dobles antes de saltar a WhatsApp
+      if (Platform.OS === "web") {
+        alert(
+          "🎉 ¡Solicitud Registrada!\nSu cita ha sido guardada en nuestro sistema. A continuación se abrirá WhatsApp para enviar su comprobante.",
+        );
+      } else {
+        Alert.alert(
+          "🎉 ¡Solicitud Registrada!",
+          "Su cita ha sido guardada en nuestro sistema. A continuación se abrirá WhatsApp para enviar su comprobante.",
+        );
+      }
+
+      // 3. Resolución Inteligente del enlace de WhatsApp según plataforma (Fija error en iOS/Android Web)
+      const telefonoClinica = "593999036517";
+      const whatsappUrl =
+        Platform.OS === "web"
+          ? `https://wa.me/${telefonoClinica}?text=${encodeURIComponent(msg)}` // Enlace universal para navegadores móviles y desktop
+          : `whatsapp://send?phone=${telefonoClinica}&text=${encodeURIComponent(msg)}`; // Protocolo nativo rápido para la APK
+
+      await Linking.openURL(whatsappUrl);
+
+      // Limpiar el formulario para dejar listo el espacio a una nueva cita
+      setServicioSel(null);
+      setMedicoSel(null);
+      setFechaSel(null);
+      setHoraSel(null);
     } catch (e) {
-      Alert.alert("Error", e.message);
+      if (Platform.OS === "web") {
+        alert("Error al agendar: " + e.message);
+      } else {
+        Alert.alert("Error", e.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -383,7 +399,6 @@ const AgendarCitaClient = () => {
         ref={scrollRef}
         contentContainerStyle={{ paddingBottom: 120 }}
       >
-        {/* Encabezado e Indicador de Pasos */}
         <View style={styles.header}>
           <View style={styles.headerTopRow}>
             <TouchableOpacity
@@ -408,7 +423,7 @@ const AgendarCitaClient = () => {
           </View>
         </View>
 
-        {/* PASO 1: Selección de Servicio */}
+        {/* PASO 1 */}
         <View style={styles.section}>
           <Text style={styles.label}>1. Elige un servicio</Text>
           <View style={styles.grid}>
@@ -421,7 +436,7 @@ const AgendarCitaClient = () => {
                 ]}
                 onPress={() => {
                   setServicioSel(item);
-                  setMedicoSel(null); // Resetea selecciones subordinadas
+                  setMedicoSel(null);
                   setFechaSel(null);
                   setHoraSel(null);
                   scrollRef.current?.scrollTo({ y: 380, animated: true });
@@ -446,7 +461,7 @@ const AgendarCitaClient = () => {
           </View>
         </View>
 
-        {/* PASO 2: Selección del Médico (Flujo e Interfaz Nuevos) */}
+        {/* PASO 2 */}
         <View style={styles.section}>
           <Text style={[styles.label, !servicioSel && styles.disabledText]}>
             2. Selecciona el Profesional
@@ -505,7 +520,7 @@ const AgendarCitaClient = () => {
           )}
         </View>
 
-        {/* PASO 3: Selección de Fecha */}
+        {/* PASO 3 */}
         <View style={styles.section}>
           <Text style={[styles.label, !medicoSel && styles.disabledText]}>
             3. Selecciona la fecha
@@ -532,7 +547,7 @@ const AgendarCitaClient = () => {
           />
         </View>
 
-        {/* PASO 4: Selección de Horario */}
+        {/* PASO 4 */}
         <View style={styles.section}>
           <Text style={[styles.label, !fechaSel && styles.disabledText]}>
             4. Elige el horario
@@ -570,7 +585,7 @@ const AgendarCitaClient = () => {
         </View>
       </ScrollView>
 
-      {/* Botón Flotante de Confirmación */}
+      {/* Botón Flotante */}
       {servicioSel && (
         <TouchableOpacity
           style={[
@@ -661,7 +676,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     padding: 5,
   },
-  // Nuevos estilos añadidos para la sección de Doctores en grilla de 2 columnas
   doctorCard: {
     width: "48%",
     paddingVertical: 16,
