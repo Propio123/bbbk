@@ -34,7 +34,7 @@ const InfoItem = ({ icon, title, subtitle, onPress, color = "#499A47" }) => (
 
 const Info = () => {
   const [rating, setRating] = useState(0);
-  const direccion = "Manuel de la Chica Narvaez y Velasco 8-63, Ibarra 100150";
+  const direccion = "Manuel de la Chica Narvaez 8-62 y Velasco, Ibarra 100150";
   const telefono = "+593999036517";
 
   const abrirMapa = () => {
@@ -71,7 +71,7 @@ const Info = () => {
         {/* BANNER DE ESTADO */}
         <View style={styles.statusBanner}>
           <View style={styles.dot} />
-          <Text style={styles.statusText}>Abre a las 9:00 a.m. (Martes)</Text>
+          <Text style={styles.statusText}>Domingo disponible previa cita</Text>
         </View>
 
         {/* BLOQUE DE INFORMACIÓN */}
@@ -92,7 +92,7 @@ const Info = () => {
         <InfoItem
           icon="clock-outline"
           title="Horarios"
-          subtitle="Lun - Vie: 09:00 - 18:00\nSáb: 09:00 - 13:00"
+          subtitle="Lun - Vie: 09:00 - 18:00\nSáb: 08:00 - 18:00"
           color="#34495E"
         />
 
@@ -143,10 +143,16 @@ const Info = () => {
           <TouchableOpacity style={styles.socialBtn} onPress={hacerLlamada}>
             <MaterialCommunityIcons name="whatsapp" size={28} color="#25D366" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.socialBtn}>
+          <TouchableOpacity
+            style={styles.socialBtn}
+            onclick="window.open('https://www.facebook.com/bbbkodontologiaec/')"
+          >
             <MaterialCommunityIcons name="facebook" size={28} color="#1877F2" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.socialBtn}>
+          <TouchableOpacity
+            style={styles.socialBtn}
+            onclick="window.open('https://www.instagram.com/bbbk_odontologia?igsh=MTk5OG5kMnd1djFzMg%3D%3D')"
+          >
             <MaterialCommunityIcons
               name="instagram"
               size={28}

@@ -117,9 +117,6 @@ const HomeScreen = ({ role, userData }) => {
             color="#fff"
             style={{ marginRight: 8 }}
           />
-          <Text style={styles.androidBannerText}>
-            ¿Usas Android? Descarga nuestra App nativa haciendo clic aquí
-          </Text>
         </TouchableOpacity>
       )}
 

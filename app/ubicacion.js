@@ -60,7 +60,7 @@ const Ubicacion = () => {
           <View style={styles.infoSection}>
             <Text style={styles.addressTitle}>Nuestra Ubicación</Text>
             <Text style={styles.addressText}>
-              Juan de Velasco 7-39 y Olmedo{"\n"}
+              Juan de Velasco 8-62 y Velasco{"\n"}
               Ibarra 100105, Imbabura{"\n"}
               Ecuador
             </Text>
@@ -110,15 +110,15 @@ const Ubicacion = () => {
           <Text style={styles.sectionTitle}>Horarios de Atención</Text>
           <View style={styles.hourRow}>
             <Text style={styles.dayText}>Lunes a Viernes</Text>
-            <Text style={styles.timeText}>08:30 - 18:30</Text>
+            <Text style={styles.timeText}>09:00 - 18:00</Text>
           </View>
           <View style={styles.hourRow}>
             <Text style={styles.dayText}>Sábado</Text>
-            <Text style={styles.timeText}>09:00 - 13:00</Text>
+            <Text style={styles.timeText}>08:00 - 18:00</Text>
           </View>
           <View style={styles.hourRow}>
             <Text style={[styles.dayText, { color: "#e74c3c" }]}>Domingo</Text>
-            <Text style={styles.timeText}>Cerrado</Text>
+            <Text style={styles.timeText}>Previa Cita</Text>
           </View>
         </View>
 
