@@ -13,7 +13,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -233,7 +233,6 @@ export default function AdminMasterPanel() {
             setLoading(true);
             try {
               await deleteDoc(doc(db, "especialidades", id));
-              // Si eliminamos el médico que estaba seleccionado, reseteamos la pestaña activa
               if (medicoSel === nombreDoc) setMedicoSel("");
             } catch (e) {
               Alert.alert("Error", "No se pudo eliminar el registro médico.");
@@ -354,7 +353,45 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
       "Se abrieron las ventanas de WhatsApp de manera secuencial.",
     );
   };
+  const renderMedicoItem = useCallback(
+    ({ item }) => (
+      <View style={styles.doctorItemCrudRow}>
+        <View style={{ flex: 1, marginRight: 8 }}>
+          <Text style={styles.doctorItemCrudService}>{item.nombre}</Text>
+          <TextInput
+            style={styles.inputEdit}
+            defaultValue={item.medico}
+            placeholder="Nombre del médico"
+            onEndEditing={async (e) => {
+              const nuevoTexto = e.nativeEvent.text.trim();
+              if (nuevoTexto && nuevoTexto !== item.medico) {
+                try {
+                  await updateDoc(doc(db, "especialidades", item.id), {
+                    medico: nuevoTexto,
+                  });
+                } catch (error) {
+                  console.error("Error al actualizar médico:", error);
+                }
+              }
+            }}
+          />
+        </View>
 
+        {/* Botón de Eliminación Segura */}
+        <TouchableOpacity
+          style={styles.btnEliminarDoctor}
+          onPress={() => handleEliminarMedico(item.id, item.medico)}
+        >
+          <MaterialCommunityIcons
+            name="trash-can-outline"
+            size={22}
+            color="#FF5252"
+          />
+        </TouchableOpacity>
+      </View>
+    ),
+    [handleEliminarMedico],
+  ); // Se pasa la dependencia de la función de eliminación
   const guardarCambioMedico = async () => {
     if (!nuevoMedicoParaCita || nuevoMedicoParaCita === citaEnEdicion.medico) {
       setCitaEnEdicion(null);
@@ -380,7 +417,7 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
       });
       setCitaEnEdicion(null);
     } catch (e) {
-      Alert.alert("Error", "No se pudo reassignar el médico.");
+      Alert.alert("Error", "No se pudo reasignar el médico.");
     } finally {
       setLoading(false);
     }
@@ -976,51 +1013,13 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
               Lista de Doctores Activos
             </Text>
 
+            {/* FlatList ahora utiliza la función memorizada estática */}
             <FlatList
               data={listaMedicos}
               keyExtractor={(item) => item.id}
               style={{ width: "100%" }}
-              renderItem={({ item }) => (
-                <View style={styles.doctorItemCrudRow}>
-                  <View style={{ flex: 1, marginRight: 8 }}>
-                    <Text style={styles.doctorItemCrudService}>
-                      {item.nombre}
-                    </Text>
-                    <TextInput
-                      style={styles.inputEdit}
-                      defaultValue={item.medico}
-                      placeholder="Nombre del médico"
-                      onEndEditing={async (e) => {
-                        const nuevoTexto = e.nativeEvent.text.trim();
-                        if (nuevoTexto && nuevoTexto !== item.medico) {
-                          try {
-                            await updateDoc(
-                              doc(db, "especialidades", item.id),
-                              {
-                                medico: nuevoTexto,
-                              },
-                            );
-                          } catch (error) {
-                            console.error("Error al actualizar médico:", error);
-                          }
-                        }
-                      }}
-                    />
-                  </View>
-
-                  {/* Botón de Eliminación Segura */}
-                  <TouchableOpacity
-                    style={styles.btnEliminarDoctor}
-                    onPress={() => handleEliminarMedico(item.id, item.medico)}
-                  >
-                    <MaterialCommunityIcons
-                      name="trash-can-outline"
-                      size={22}
-                      color="#FF5252"
-                    />
-                  </TouchableOpacity>
-                </View>
-              )}
+              renderItem={renderMedicoItem}
+              windowSize={5} // Evita consumo excesivo de RAM si la lista crece
             />
 
             <TouchableOpacity
