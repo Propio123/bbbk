@@ -35,9 +35,16 @@ import { auth, db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
 
 // Sub-componente interno optimizado para evitar re-renders masivos al escribir
-const ClienteItem = ({ item, onUpdateMillas, onIncrement, onUpdateHC }) => {
+const ClienteItem = ({
+  item,
+  onUpdateMillas,
+  onIncrement,
+  onUpdateHC,
+  onUpdateCedula,
+}) => {
   const [localMillas, setLocalMillas] = useState(String(item.puntosSalud || 0));
   const [localHC, setLocalHC] = useState(String(item.numHistoriaClinica || ""));
+  const [cedula, setCedula] = useState(String(item.cedula || ""));
 
   useEffect(() => {
     setLocalMillas(String(item.puntosSalud || 0));
@@ -45,15 +52,18 @@ const ClienteItem = ({ item, onUpdateMillas, onIncrement, onUpdateHC }) => {
 
   useEffect(() => {
     setLocalHC(String(item.numHistoriaClinica || ""));
-  }, [item.numHistoriaClinica]);
+    setCedula(String(item.cedula || ""));
+  }, [item.numHistoriaClinica, item.cedula]);
 
   return (
     <View style={styles.clienteCard}>
+      {/* SECCIÓN IZQUIERDA: NOMBRE, H.C. Y CÉDULA */}
       <View style={{ flex: 1, marginRight: 10 }}>
-        <Text style={{ fontWeight: "bold", fontSize: 14 }}>
+        <Text style={{ fontWeight: "bold", fontSize: 14, color: "#333" }}>
           {item.nombre || item.displayName || "Paciente"}
         </Text>
 
+        {/* FILA DE HISTORIA CLÍNICA */}
         <View
           style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}
         >
@@ -69,9 +79,29 @@ const ClienteItem = ({ item, onUpdateMillas, onIncrement, onUpdateHC }) => {
             onEndEditing={() => onUpdateHC(item.id, localHC)}
           />
         </View>
+
+        {/* FILA DE CÉDULA (Alineada igual que H.C.) */}
+        <View
+          style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}
+        >
+          <Text style={{ fontSize: 11, color: "#555", fontWeight: "600" }}>
+            Cédula:{" "}
+          </Text>
+          <TextInput
+            style={styles.hcInput} // Usamos el mismo estilo compacto para mantener simetría
+            placeholder="Ej: 100xxxxxx"
+            placeholderTextColor="#999"
+            value={cedula}
+            onChangeText={setCedula}
+            keyboardType="numeric"
+            maxLength={10} // Límite estándar para cédulas en Ecuador
+            onEndEditing={() => onUpdateCedula(item.id, cedula.trim())} // Guarda automáticamente al terminar
+          />
+        </View>
       </View>
 
-      <View style={{ alignItems: "flex-end" }}>
+      {/* SECCIÓN DERECHA: MILLAS Y BOTONES */}
+      <View style={{ alignItems: "flex-end", justifyContent: "center" }}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <Text style={{ fontSize: 10, color: "#666", marginRight: 5 }}>
             Millas:
@@ -277,7 +307,6 @@ export default function AdminMasterPanel() {
           activo: true,
         });
       }
-       
 
       // 2. CREAR EL NUEVO MÉDICO EN LA COLECCIÓN INDEPENDIENTE
       await addDoc(collection(db, "medicos"), {
@@ -377,6 +406,13 @@ export default function AdminMasterPanel() {
         "Error",
         "No se pudo actualizar el número de historia clínica.",
       );
+    }
+  };
+  const handleUpdateCedula = async (userId, value) => {
+    try {
+      await updateDoc(doc(db, "users", userId), { cedula: value });
+    } catch (e) {
+      Alert.alert("Error", "No se pudo actualizar el número de cédula.");
     }
   };
 

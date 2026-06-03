@@ -71,7 +71,6 @@ LocaleConfig.locales["es"] = {
 };
 LocaleConfig.defaultLocale = "es";
 
-// IDs Normalizados para coincidir exactamente con la lógica de guardado de la BDD
 const SERVICIOS = [
   {
     id: "general",
@@ -158,14 +157,11 @@ const AgendarCitaClient = () => {
 
   const [loading, setLoading] = useState(false);
   const [bloquesOcupados, setBloquesOcupados] = useState([]);
-
-  // NUEVO ESTADO: Guarda los médicos traídos en tiempo real de Firestore
   const [todosLosMedicos, setTodosLosMedicos] = useState([]);
 
   // --- ESCUCHA DE MÉDICOS DESDE FIRESTORE ---
   useEffect(() => {
     const q = query(collection(db, "medicos"), where("activo", "==", true));
-
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
@@ -179,7 +175,6 @@ const AgendarCitaClient = () => {
         console.error("Error cargando médicos en la vista cliente:", error);
       },
     );
-
     return () => unsubscribe();
   }, []);
 
@@ -194,10 +189,8 @@ const AgendarCitaClient = () => {
     );
   }, [servicioSel, todosLosMedicos]);
 
-  // Evaluamos si el servicio actual tiene médicos registrados en el sistema
   const servicioRequiereMedico = servicioSel && medicosFiltrados.length > 0;
 
-  // Construcción estricta del Grid con placeholders si hacen falta celdas vacías
   const medicosGrid = useMemo(() => {
     if (!servicioSel) return [];
     let lista = medicosFiltrados.map((m) => m.nombre);
@@ -207,7 +200,6 @@ const AgendarCitaClient = () => {
     return lista;
   }, [servicioSel, medicosFiltrados]);
 
-  // Validación de paso completado
   const tieneMedicoValido = useMemo(() => {
     if (!servicioSel) return false;
     if (!servicioRequiereMedico) return true;
@@ -309,7 +301,7 @@ const AgendarCitaClient = () => {
     return slots;
   }, [fechaSel, bloquesOcupados]);
 
-  // --- ENVÍO DE FORMULARIO A FIRESTORE ---
+  // --- ENVÍO DE FORMULARIO A FIRESTORE Y WHATSAPP ---
   const enviarSolicitud = async () => {
     if (!estaListo) return;
     setLoading(true);
@@ -317,8 +309,10 @@ const AgendarCitaClient = () => {
       const user = auth.currentUser;
       let nombreRealPaciente = "Paciente Registrado";
       let telefonoRealPaciente = "";
+      let historiaClinicaPaciente = "No asignada"; // Inicializador por defecto
 
       if (user) {
+        // Intento 1: Obtener directamente por UID de documento
         try {
           const directDocRef = doc(db, "users", user.uid);
           const directDocSnap = await getDoc(directDocRef);
@@ -326,11 +320,14 @@ const AgendarCitaClient = () => {
             const data = directDocSnap.data();
             if (data.nombre) nombreRealPaciente = data.nombre.trim();
             if (data.telefono) telefonoRealPaciente = data.telefono;
+            if (data.numHistoriaClinica)
+              historiaClinicaPaciente = data.numHistoriaClinica;
           }
         } catch (e1) {
           console.log("I1 fallido:", e1.message);
         }
 
+        // Intento 2: Búsqueda alternativa mediante query por campo 'uid'
         if (nombreRealPaciente === "Paciente Registrado") {
           try {
             const qUser = query(
@@ -342,6 +339,8 @@ const AgendarCitaClient = () => {
               const data = querySnapshot.docs[0].data();
               if (data.nombre) nombreRealPaciente = data.nombre.trim();
               if (data.telefono) telefonoRealPaciente = data.telefono;
+              if (data.numHistoriaClinica)
+                historiaClinicaPaciente = data.numHistoriaClinica;
             }
           } catch (e2) {
             console.log("I2 fallido:", e2.message);
@@ -351,10 +350,12 @@ const AgendarCitaClient = () => {
 
       const medicoFinal = servicioRequiereMedico ? medicoSel : "Por asignar";
 
+      // Guardamos la cita en Firestore
       const docCitaRef = await addDoc(collection(db, "citas"), {
         pacienteId: user ? user.uid : "anonimo",
         NombrePaciente: nombreRealPaciente,
         telefonoPaciente: telefonoRealPaciente,
+        numHistoriaClinica: historiaClinicaPaciente, // Guardamos la H.C. también en el registro de la cita
         servicio: servicioSel.nombre,
         duracion: servicioSel.duracion,
         fecha: fechaSel,
@@ -373,9 +374,11 @@ const AgendarCitaClient = () => {
         estado: "pendiente",
       });
 
+      // MODIFICADO: Estructura del mensaje para incluir el número de historia clínica
       const msg =
         `🦷 *Nueva Solicitud de Cita*\n\n` +
         `👤 *Paciente:* ${nombreRealPaciente}\n` +
+        `🗂️ *H.C. N°:* ${historiaClinicaPaciente}\n` + // <-- Agregado en el cuerpo del mensaje
         `✨ *Servicio:* ${servicioSel.nombre}\n` +
         `👨‍⚕️ *Médico:* ${medicoFinal}\n` +
         `🗓️ *Fecha:* ${fechaSel}\n` +
@@ -401,6 +404,7 @@ const AgendarCitaClient = () => {
 
       await Linking.openURL(whatsappUrl);
 
+      // Limpieza de estados
       setServicioSel(null);
       setMedicoSel(null);
       setFechaSel(null);
@@ -486,7 +490,7 @@ const AgendarCitaClient = () => {
           </View>
         </View>
 
-        {/* PASO 2: DOCTORES DINÁMICOS */}
+        {/* PASO 2: DOCTORES */}
         <View style={styles.section}>
           <Text style={[styles.label, !servicioSel && styles.disabledText]}>
             2. Selecciona el Profesional

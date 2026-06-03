@@ -70,6 +70,8 @@ const HomeScreen = ({ role, userData }) => {
 
   // --- LÓGICA DE FIDELIZACIÓN POR NIVELES ---
   const puntosActuales = userData?.puntosSalud || 0;
+  // EXTRAÍMOS EL NÚMERO DE HISTORIA CLÍNICA DE USERDATA
+  const historiaClinica = userData?.numHistoriaClinica || "No asignado";
 
   let nivelConfig = {
     cardBg: COLORS.darkGreen || "#1A3A34",
@@ -91,7 +93,7 @@ const HomeScreen = ({ role, userData }) => {
     };
   } else if (puntosActuales >= 2000) {
     nivelConfig = {
-      cardBg: "#A67C00", // Dorado Oro Premium balanceado (legible con texto blanco)
+      cardBg: "#A67C00", // Dorado Oro Premium balanceado
       borderColor: "#FFD700",
       borderWidth: 1.5,
       badgeText: "CLIENTE PREMIUM",
@@ -127,11 +129,26 @@ const HomeScreen = ({ role, userData }) => {
         <View style={styles.body}>
           <Text style={styles.sloganText}>Sonriendo junto a ti</Text>
 
+          {/* Bloque de Bienvenida Modificado */}
           <View style={styles.welcomeContainer}>
             <Text style={styles.welcomeTitle}>
               Hola, {userData ? userData.nombre : "Bienvenido"}
             </Text>
             <Text style={styles.subtitle}>Tu Clínica Dental Digital</Text>
+
+            {/* AGREGADO: Pequeño indicador visual de H.C. debajo del saludo principal */}
+            {userData?.numHistoriaClinica && (
+              <View style={styles.hcBadge}>
+                <MaterialCommunityIcons
+                  name="folder-account"
+                  size={13}
+                  color="#666"
+                />
+                <Text style={styles.hcBadgeText}>
+                  H.C. N° {historiaClinica}
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* 🌟 Panel de Fidelización Dinámico por Rangos */}
@@ -162,18 +179,22 @@ const HomeScreen = ({ role, userData }) => {
             </View>
 
             <View style={styles.pointsMain}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.pointsLabel}>Puntos Salud Acumulados</Text>
                 <Text style={styles.pointsValue}>
                   {puntosActuales} <Text style={styles.pointsUnit}>pts</Text>
                 </Text>
+
+                {/* AGREGADO: Texto de Historia Clínica incrustado de forma secundaria dentro de la tarjeta */}
+                <Text style={styles.cardHcText}>H.C: {historiaClinica}</Text>
               </View>
+
               <TouchableOpacity
                 style={[
                   styles.redeemButton,
                   puntosActuales >= 1000 && {
                     backgroundColor: "rgba(255,255,255,0.25)",
-                  }, // El botón se adapta estéticamente en niveles altos
+                  },
                 ]}
                 onPress={() => handleNavigation("/beneficios")}
               >
@@ -272,6 +293,24 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   subtitle: { fontSize: 15, color: "#666", marginTop: 5 },
+
+  // NUEVOS ESTILOS PARA EL BADGE DE H.C. EN LA BIENVENIDA
+  hcBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F0F0F0",
+    paddingVertical: 3,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+    marginTop: 8,
+    gap: 4,
+  },
+  hcBadgeText: {
+    fontSize: 11,
+    color: "#555",
+    fontWeight: "600",
+  },
+
   pointsCard: {
     width: "100%",
     borderRadius: 22,
@@ -318,8 +357,18 @@ const styles = StyleSheet.create({
   pointsUnit: {
     fontSize: 16,
     fontWeight: "normal",
-    color: "#fff", // Blanco para mantener el contraste universal
+    color: "#fff",
   },
+
+  // NUEVO ESTILO INTERNO DE LA TARJETA
+  cardHcText: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 5,
+    letterSpacing: 0.5,
+  },
+
   redeemButton: {
     backgroundColor: COLORS.primaryGreen,
     paddingVertical: 10,
