@@ -7,24 +7,29 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
+  orderBy,
   query,
+  setDoc,
   updateDoc,
   where,
 } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Linking,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { auth, db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
@@ -107,6 +112,7 @@ export default function AdminMasterPanel() {
   // --- ESTADOS MÉDICOS ---
   const [listaMedicos, setListaMedicos] = useState([]);
   const [medicoSel, setMedicoSel] = useState("");
+  const [medicoActivoGrid, setMedicoActivoGrid] = useState(null);
 
   // Formulario para nuevo médico
   const [nuevoNombreMed, setNuevoNombreMed] = useState("");
@@ -132,129 +138,222 @@ export default function AdminMasterPanel() {
   const [citasManana, setCitasManana] = useState([]);
 
   // 1. Listener de Especialidades / Médicos
+  // 1. Listener de Médicos (Adaptado para alimentar el Grid del Admin de forma global)
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "especialidades"), (snap) => {
-      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setListaMedicos(docs);
-      if (docs.length > 0 && !medicoSel) setMedicoSel(docs[0].medico);
-    });
-    return () => unsub();
-  }, []);
+    // Escuchamos los médicos si el modal está abierto O si estamos en la vista de la agenda (para armar el Grid)
+    if (!modalMedicos && vistaActual !== "agenda") return;
 
-  // 2. Listener de Citas o Clientes
+    // Filtramos solo por los médicos activos para el Grid, ordenados alfabéticamente
+    const q = query(
+      collection(db, "medicos"),
+      where("activo", "==", true), // Asegura mostrar solo personal activo
+      orderBy("nombre", "asc"),
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const medicosFormateados = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        // setListaMedicos se sigue actualizando en tiempo real para el Grid y el Modal
+        setListaMedicos(medicosFormateados);
+      },
+      (error) => {
+        console.error("Error escuchando médicos en el Admin: ", error);
+      },
+    );
+
+    return () => unsubscribe();
+  }, [modalMedicos, vistaActual]); // Añadida la dependencia 'vistaActual'
+  const agendaMap = useMemo(() => {
+    const mapa = {};
+    if (!medicoActivoGrid) return mapa;
+
+    // Filtramos las citas de la fecha que pertenecen al médico activo en el Grid
+    const citasDelMedico = citas.filter((c) => c.medico === medicoActivoGrid);
+
+    citasDelMedico.forEach((cita) => {
+      const numSlots = Math.ceil((cita.duracion || 15) / 15);
+      let [h, m] = cita.hora.split(":").map(Number);
+
+      for (let i = 0; i < numSlots; i++) {
+        const tiempoStr = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+        mapa[tiempoStr] = {
+          ...cita,
+          esInicio: i === 0, // Identificador para pintar el nombre del paciente solo en la primera celda
+        };
+
+        m += 15;
+        if (m >= 60) {
+          h++;
+          m = 0;
+        }
+      }
+    });
+    return mapa;
+  }, [citas, medicoActivoGrid]);
+  // 2. Listener de Citas o Clientes (Mantiene la reactividad por fecha)
   useEffect(() => {
     const q =
       vistaActual === "agenda"
-        ? query(collection(db, "citas"), where("fecha", "==", fechaSel))
+        ? query(
+            collection(db, "citas"),
+            where("fecha", "==", fechaSel),
+            where("estado", "in", ["pendiente", "confirmada"]), // Opcional: Filtra estados válidos para el Grid
+          )
         : query(collection(db, "users"));
 
-    const unsubData = onSnapshot(q, (snap) => {
-      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      if (vistaActual === "agenda") {
-        setCitas(data);
-      } else {
-        setClientes(data);
-      }
-    });
+    const unsubData = onSnapshot(
+      q,
+      (snap) => {
+        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        if (vistaActual === "agenda") {
+          setCitas(data);
+        } else {
+          setClientes(data);
+        }
+      },
+      (error) => {
+        console.error(`Error escuchando ${vistaActual}: `, error);
+      },
+    );
 
     return () => unsubData();
   }, [fechaSel, vistaActual]);
-
+  useEffect(() => {
+    if (listaMedicos.length > 0 && !medicoActivoGrid) {
+      setMedicoActivoGrid(listaMedicos[0].nombre);
+    }
+  }, [listaMedicos]);
   // --- ACCIONES CRUD MÉDICOS ---
-  const handleAgregarMedico = async () => {
-    if (!nuevoNombreMed.trim() || !nuevaEspecialidadMed.trim()) {
-      return Alert.alert(
-        "Campos vacíos",
-        "Por favor ingresa tanto el servicio/especialidad como el nombre del médico.",
+  const citasAgrupadasPorMedico = useMemo(() => {
+    if (vistaActual !== "agenda") return [];
+
+    return listaMedicos.map((medico) => {
+      // Filtramos las citas de la fecha que le pertenecen a este médico específico
+      const citasDelMedico = citas.filter(
+        (cita) => cita.medico === medico.nombre,
       );
+
+      return {
+        ...medico,
+        citas: citasDelMedico.sort((a, b) => a.hora.localeCompare(b.hora)), // Ordenadas por hora cronológica
+      };
+    });
+  }, [citas, listaMedicos, vistaActual]);
+  const handleAgregarMedico = async () => {
+    // Limpiamos los textos y formateamos la especialidad a minúsculas o ID estandarizado
+    const especialidadTexto = nuevaEspecialidadMed.trim();
+    const nombreMedicoTexto = nuevoNombreMed.trim();
+
+    if (!especialidadTexto || !nombreMedicoTexto) {
+      Alert.alert(
+        "Campos vacíos",
+        "Por favor rellena ambos campos para continuar.",
+      );
+      return;
     }
 
-    setLoading(true);
+    // Creamos un ID limpio para la especialidad (ej: "general", "ortodoncia")
+    const especialidadId = especialidadTexto
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
     try {
-      await addDoc(collection(db, "especialidades"), {
-        nombre: nuevaEspecialidadMed.trim(),
-        medico: nuevoNombreMed.trim(),
+      setLoading(true);
+
+      // 1. VERIFICAR Y CREAR LA ESPECIALIDAD SI NO EXISTE
+      const espRef = doc(db, "especialidades", especialidadId);
+      const espSnap = await getDoc(espRef);
+
+      if (!espSnap.exists()) {
+        // Si la especialidad no existe en la bdd, la creamos primero
+        await setDoc(espRef, {
+          nombre: especialidadTexto, // Mantiene el formato bonito (ej: "General")
+          activo: true,
+        });
+      }
+       
+
+      // 2. CREAR EL NUEVO MÉDICO EN LA COLECCIÓN INDEPENDIENTE
+      await addDoc(collection(db, "medicos"), {
+        nombre: nombreMedicoTexto,
+        especialidadId: especialidadId, // Guardamos la relación al ID de la especialidad
+        especialidadNombre: especialidadTexto, // Atributo denormalizado para ahorrar lecturas en los grids
+        activo: true,
       });
+
+      // Limpiamos los campos del formulario
       setNuevoNombreMed("");
-      setNuevaEspecialidadMed("");
-      Alert.alert("Éxito", "Especialista añadido correctamente.");
-    } catch (e) {
-      Alert.alert("Error", "No se pudo agregar al especialista.");
+      // Opcional: puedes dejar nuevaEspecialidadMed si van a ingresar más doctores en la misma área
+
+      Alert.alert(
+        "Éxito",
+        `${nombreMedicoTexto} ha sido registrado en la especialidad ${especialidadTexto}.`,
+      );
+    } catch (error) {
+      console.error("Error completo al añadir médico/especialidad:", error);
+      Alert.alert(
+        "Error",
+        "No se pudo completar el registro debido a un problema de permisos o red.",
+      );
     } finally {
       setLoading(false);
     }
   };
   // --- ACCIÓN PARA LIBERAR CITA ---
-  import { Platform, Alert } from "react-native";
-
   const handleLiberarCita = (cita) => {
-    const mensaje = `¿Estás seguro de que deseas cancelar y liberar la cita de las ${cita.hora} para el paciente ${cita.NombrePaciente || cita.pacienteNombre}?`;
-
-    // 1. Lógica core que ejecuta la eliminación en Firebase
-    const ejecutarEliminacion = async () => {
-      setLoading(true);
-      try {
-        // Eliminamos la cita de la base de datos para dejar el espacio libre
-        await deleteDoc(doc(db, "citas", cita.id));
-        setCitaEnEdicion(null);
-
-        if (Platform.OS === "web") {
-          alert("El espacio horario ha sido liberado correctamente.");
-        } else {
-          Alert.alert(
-            "Éxito",
-            "El espacio horario ha sido liberado correctamente.",
-          );
-        }
-      } catch (e) {
-        console.error(e);
-        if (Platform.OS === "web") {
-          alert("No se pudo liberar la cita en el servidor.");
-        } else {
-          Alert.alert("Error", "No se pudo liberar la cita en el servidor.");
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    // 2. Bifurcación según la plataforma
-    if (Platform.OS === "web") {
-      // Confirmación nativa del navegador para la Web
-      const confirmar = window.confirm(mensaje);
-      if (confirmar) {
-        ejecutarEliminacion();
-      }
-    } else {
-      // Alerta nativa para Android / iOS
-      Alert.alert("Liberar Bloque Horario", mensaje, [
+    Alert.alert(
+      "Liberar Bloque Horario",
+      `¿Estás seguro de que deseas cancelar y liberar la cita de las ${cita.hora} para el paciente ${cita.NombrePaciente || cita.pacienteNombre}?`,
+      [
         { text: "No, mantener", style: "cancel" },
         {
           text: "Sí, liberar espacio",
           style: "destructive",
-          onPress: ejecutarEliminacion,
+          onPress: async () => {
+            setLoading(true);
+            try {
+              // Eliminamos la cita de la base de datos para dejar el espacio libre
+              await deleteDoc(doc(db, "citas", cita.id));
+              setCitaEnEdicion(null);
+              Alert.alert(
+                "Éxito",
+                "El espacio horario ha sido liberado correctamente.",
+              );
+            } catch (e) {
+              console.error(e);
+              Alert.alert(
+                "Error",
+                "No se pudo liberar la cita en el servidor.",
+              );
+            } finally {
+              setLoading(false);
+            }
+          },
         },
-      ]);
-    }
+      ],
+    );
   };
-  const handleEliminarMedico = (id, nombreDoc) => {
+  const handleEliminarMedico = (id, nombre) => {
     Alert.alert(
-      "Confirmar Eliminación",
-      `¿Estás seguro de que deseas eliminar al especialista ${nombreDoc}? Esto removerá su pestaña del panel.`,
+      "Eliminar Especialista",
+      `¿Estás seguro de que deseas eliminar al especialista ${nombre}?`,
       [
         { text: "Cancelar", style: "cancel" },
         {
           text: "Eliminar",
           style: "destructive",
           onPress: async () => {
-            setLoading(true);
             try {
-              await deleteDoc(doc(db, "especialidades", id));
-              if (medicoSel === nombreDoc) setMedicoSel("");
-            } catch (e) {
-              Alert.alert("Error", "No se pudo eliminar el registro médico.");
-            } finally {
-              setLoading(false);
+              // Apuntar a la colección correcta "medicos"
+              await deleteDoc(doc(db, "medicos", id));
+            } catch (error) {
+              console.error("Error al eliminar médico:", error);
             }
           },
         },
@@ -370,56 +469,60 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
       "Se abrieron las ventanas de WhatsApp de manera secuencial.",
     );
   };
-  const renderMedicoItem = useCallback(
-    ({ item }) => (
-      <View style={styles.doctorItemCrudRow}>
-        <View style={{ flex: 1, marginRight: 8 }}>
-          <Text style={styles.doctorItemCrudService}>{item.nombre}</Text>
-          <TextInput
-            style={styles.inputEdit}
-            defaultValue={item.medico}
-            placeholder="Nombre del médico"
-            onEndEditing={async (e) => {
-              const nuevoTexto = e.nativeEvent.text.trim();
-              if (nuevoTexto && nuevoTexto !== item.medico) {
-                try {
-                  await updateDoc(doc(db, "especialidades", item.id), {
-                    medico: nuevoTexto,
-                  });
-                } catch (error) {
-                  console.error("Error al actualizar médico:", error);
-                }
-              }
-            }}
-          />
-        </View>
+  const renderMedicoItem = useCallback(({ item }) => (
+    <View style={styles.doctorItemCrudRow}>
+      <View style={{ flex: 1, marginRight: 8 }}>
+        {/* 1. Mostramos la especialidad arriba (ej: General) */}
+        <Text style={styles.doctorItemCrudService}>
+          {item.especialidadNombre || "Sin Especialidad"}
+        </Text>
 
-        {/* Botón de Eliminación Segura */}
-        <TouchableOpacity
-          style={styles.btnEliminarDoctor}
-          onPress={() => handleEliminarMedico(item.id, item.medico)}
-        >
-          <MaterialCommunityIcons
-            name="trash-can-outline"
-            size={22}
-            color="#FF5252"
-          />
-        </TouchableOpacity>
+        {/* 2. El TextInput debe usar item.nombre (Dra. Vanessa) */}
+        <TextInput
+          style={styles.inputEdit}
+          defaultValue={item.nombre} // <-- CAMBIADO: Antes era item.medico
+          placeholder="Nombre del médico"
+          onEndEditing={async (e) => {
+            const nuevoTexto = e.nativeEvent.text.trim();
+            if (nuevoTexto && nuevoTexto !== item.nombre) {
+              try {
+                await updateDoc(doc(db, "medicos", item.id), {
+                  nombre: nuevoTexto, // <-- CAMBIADO: Modifica la colección medicos
+                });
+              } catch (error) {
+                console.error("Error al actualizar médico:", error);
+              }
+            }
+          }}
+        />
       </View>
-    ),
-    [handleEliminarMedico],
-  ); // Se pasa la dependencia de la función de eliminación
+
+      <TouchableOpacity
+        style={styles.btnEliminarDoctor}
+        onPress={() => handleEliminarMedico(item.id, item.nombre)} // <-- CAMBIADO: Pasar item.nombre
+      >
+        <MaterialCommunityIcons
+          name="trash-can-outline"
+          size={22}
+          color="#FF5252"
+        />
+      </TouchableOpacity>
+    </View>
+  )); // Se pasa la dependencia de la función de eliminación
   const guardarCambioMedico = async () => {
     if (!nuevoMedicoParaCita || nuevoMedicoParaCita === citaEnEdicion.medico) {
       setCitaEnEdicion(null);
       return;
     }
+
+    // Validación de colisión de horarios usando el nombre correcto
     const ocupado = citas.find(
       (c) =>
         c.medico === nuevoMedicoParaCita &&
         c.hora === citaEnEdicion.hora &&
         c.estado !== "finalizado",
     );
+
     if (ocupado) {
       return Alert.alert(
         "Error",
@@ -430,7 +533,7 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
     setLoading(true);
     try {
       await updateDoc(doc(db, "citas", citaEnEdicion.id), {
-        medico: nuevoMedicoParaCita,
+        medico: nuevoMedicoParaCita, // Se guarda el string del nombre del médico asignado
       });
       setCitaEnEdicion(null);
     } catch (e) {
@@ -439,7 +542,6 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
       setLoading(false);
     }
   };
-
   const onDateChange = (event, selectedDate) => {
     setMostrarCalendario(Platform.OS === "ios");
     if (selectedDate) {
@@ -449,26 +551,6 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
       setFechaSel(`${yyyy}-${mm}-${dd}`);
     }
   };
-
-  const agendaMap = useMemo(() => {
-    const map = {};
-    citas
-      .filter((c) => c.medico === medicoSel)
-      .forEach((cita) => {
-        const slots = Math.ceil((cita.duracion || 15) / 15);
-        let [h, m] = cita.hora.split(":").map(Number);
-        for (let i = 0; i < slots; i++) {
-          const key = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
-          if (!map[key]) map[key] = { ...cita, esInicio: i === 0 };
-          m += 15;
-          if (m >= 60) {
-            h++;
-            m = 0;
-          }
-        }
-      });
-    return map;
-  }, [citas, medicoSel]);
 
   const HORARIOS = useMemo(() => {
     const list = [];
@@ -521,7 +603,9 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
           >
             <MaterialCommunityIcons name="power" size={26} color="#fff" />
           </TouchableOpacity>
+
           <Text style={styles.headerTitle}>BBBK Master Panel</Text>
+
           <View style={{ flexDirection: "row" }}>
             <TouchableOpacity
               onPress={prepararConfirmaciones}
@@ -564,24 +648,7 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
                 ? "Hoy"
                 : fechaSel}
             </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={{ marginTop: 10 }}
-            >
-              {listaMedicos.map((m) => (
-                <TouchableOpacity
-                  key={m.id}
-                  onPress={() => setMedicoSel(m.medico)}
-                  style={[
-                    styles.tab,
-                    medicoSel === m.medico && styles.tabActive,
-                  ]}
-                >
-                  <Text style={styles.tabText}>{m.nombre}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            {/* Se eliminó el antiguo ScrollView amontonado que causaba conflicto aquí */}
           </View>
         )}
       </View>
@@ -617,6 +684,52 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
       {/* CONTENIDO PRINCIPAL */}
       {vistaActual === "agenda" ? (
         <View style={{ flex: 1 }}>
+          {/* Selector Horizontal Único de Médicos */}
+          <View style={styles.selectorMedicosContainer}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.selectorMedicosScroll}
+            >
+              {listaMedicos.map((m) => {
+                const esActivo = medicoActivoGrid === m.nombre;
+                return (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[
+                      styles.btnMedicoTab,
+                      esActivo && styles.btnMedicoTabActivo,
+                    ]}
+                    onPress={() => setMedicoActivoGrid(m.nombre)}
+                  >
+                    <Text
+                      style={[
+                        styles.textMedicoTab,
+                        esActivo && styles.textMedicoTabActivo,
+                      ]}
+                    >
+                      {m.nombre}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.subtextMedicoTab,
+                        esActivo && styles.subtextMedicoTabActivo,
+                      ]}
+                    >
+                      {m.especialidadNombre || "Especialista"}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+              {listaMedicos.length === 0 && (
+                <Text style={styles.placeholderText}>
+                  No hay médicos registrados
+                </Text>
+              )}
+            </ScrollView>
+          </View>
+
+          {/* Grid de Horarios del Médico Seleccionado */}
           <ScrollView contentContainerStyle={styles.grid}>
             {HORARIOS.map((h) => {
               const info = agendaMap[h];
@@ -658,14 +771,13 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
               );
             })}
           </ScrollView>
-
           {/* Panel inferior de Citas Atendidas */}
           <View style={styles.reportFooter}>
             <View style={styles.reportHeaderRow}>
               <MaterialCommunityIcons
                 name="chart-box"
                 size={18}
-                color={COLORS.darkGreen}
+                color={COLORS.darkGreen || "#1A3A34"}
               />
               <Text style={styles.reportTitle}>
                 Citas Atendidas Hoy ({fechaSel})
@@ -678,9 +790,9 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
             >
               {listaMedicos.map((m) => (
                 <View key={m.id} style={styles.reportBadge}>
-                  <Text style={styles.reportDoctorName}>{m.medico}: </Text>
+                  <Text style={styles.reportDoctorName}>{m.nombre}: </Text>
                   <Text style={styles.reportDoctorCount}>
-                    {reporteCitasCerradas[m.medico] || 0} atendidas
+                    {reporteCitasCerradas[m.nombre] || 0} atendidas
                   </Text>
                 </View>
               ))}
@@ -711,7 +823,7 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
           />
         </View>
       )}
-
+      {/* PANEL EDICIÓN DE CITA */}
       {/* PANEL EDICIÓN DE CITA */}
       {citaEnEdicion && (
         <View style={styles.editPanel}>
@@ -762,30 +874,45 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
           <Text style={styles.label}>
             Reasignar médico para las {citaEnEdicion.hora}:
           </Text>
+
+          {/* Lista Horizontal de Reasignación Corregida */}
           <ScrollView
             horizontal
-            style={{ marginBottom: 15, maxHeight: 40 }}
+            style={{ marginBottom: 15, maxHeight: 45 }}
             showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ alignItems: "center", gap: 8 }}
           >
-            {listaMedicos.map((m) => (
-              <TouchableOpacity
-                key={m.id}
-                onPress={() => setNuevoMedicoParaCita(m.medico)}
-                style={[
-                  styles.miniTab,
-                  nuevoMedicoParaCita === m.medico && styles.tabActive,
-                ]}
-              >
-                <Text
+            {listaMedicos.map((m) => {
+              // CAMBIADO: Se usa m.nombre en lugar de m.medico
+              const esSeleccionado = nuevoMedicoParaCita === m.nombre;
+              return (
+                <TouchableOpacity
+                  key={m.id}
+                  onPress={() => setNuevoMedicoParaCita(m.nombre)} // CAMBIADO: m.nombre
                   style={[
-                    styles.tabText,
-                    nuevoMedicoParaCita !== m.medico && { color: "#333" },
+                    styles.miniTab,
+                    esSeleccionado && styles.tabActive,
+                    {
+                      paddingVertical: 6,
+                      paddingHorizontal: 12,
+                      borderRadius: 8,
+                    },
                   ]}
                 >
-                  {m.medico}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  <Text
+                    style={[
+                      styles.tabText,
+                      esSeleccionado
+                        ? { color: "#fff", fontWeight: "bold" }
+                        : { color: "#333" },
+                    ]}
+                  >
+                    {m.nombre}{" "}
+                    {/* CAMBIADO: Muestra el nombre real en el botón */}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
 
           {/* BOTONES DE ACCIÓN DE LA CITA */}
@@ -836,7 +963,7 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
               onPress={() => guardarCambioMedico()}
               style={[
                 styles.btnAction,
-                { backgroundColor: COLORS.primaryGreen },
+                { backgroundColor: COLORS.primaryGreen || "#8CC63F" },
               ]}
             >
               <MaterialCommunityIcons
@@ -1050,7 +1177,6 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
           </View>
         </View>
       </Modal>
-
       {/* INDICADOR DE CARGA */}
       {loading && (
         <ActivityIndicator
@@ -1272,6 +1398,66 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     marginTop: 15,
+  },
+  selectorMedicosContainer: {
+    backgroundColor: "#F8F9FA",
+    borderBottomWidth: 1,
+    borderColor: "#E9ECEF",
+    paddingVertical: 10,
+  },
+  selectorMedicosScroll: {
+    paddingHorizontal: 15,
+    alignItems: "center",
+  },
+  btnMedicoCard: {
+    backgroundColor: "#FFFFFF",
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2, // Sombra suave en Android
+    minWidth: 130, // Evita que se colapse con nombres cortos
+  },
+  btnMedicoCardActivo: {
+    backgroundColor: COLORS.primaryGreen || "#8CC63F",
+    borderColor: COLORS.primaryGreen || "#8CC63F",
+    shadowOpacity: 0.15,
+    elevation: 4,
+  },
+  btnMedicoContent: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  textMedicoTab: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#343A40",
+    textAlign: "center",
+    marginTop: 2,
+  },
+  textMedicoTabActivo: {
+    color: "#3e8fb4",
+  },
+  subtextMedicoTab: {
+    fontSize: 11,
+    color: "#6C757D",
+    fontWeight: "500",
+    marginTop: 1,
+    textAlign: "center",
+  },
+  subtextMedicoTabActivo: {
+    color: "rgba(68, 136, 156, 0.85)",
+  },
+  placeholderText: {
+    color: "#999",
+    fontStyle: "italic",
+    paddingHorizontal: 10,
   },
   btnTextBlack: { color: "#000", fontWeight: "bold" },
   btnSendAll: {

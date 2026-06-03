@@ -71,89 +71,76 @@ LocaleConfig.locales["es"] = {
 };
 LocaleConfig.defaultLocale = "es";
 
+// IDs Normalizados para coincidir exactamente con la lógica de guardado de la BDD
 const SERVICIOS = [
   {
-    id: "gen",
+    id: "general",
     nombre: "General",
     duracion: 30,
-    medicos: ["Dra. Kati Amatima", "Dra. Doménica Palma"],
     img: {
       uri: "https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=500",
     },
   },
   {
-    id: "ort",
+    id: "ortodoncia",
     nombre: "Ortodoncia",
     duracion: 30,
-    medicos: [
-      "Dr. Bladimir Benavides",
-      "Dr. Julian Rosero",
-      "Dra. Daniela Benavides",
-      "Dra. Verónica Benavides",
-    ],
     img: {
       uri: "https://www.clinicadentallarranaga.com/wp-content/uploads/que_es_una_ortodoncia.jpg",
     },
   },
   {
-    id: "end",
+    id: "endodoncia",
     nombre: "Endodoncia",
     duracion: 60,
-    medicos: ["Dra. Vanessa Nuñez"],
     img: {
       uri: "https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=500",
     },
   },
   {
-    id: "cir",
+    id: "cirugia",
     nombre: "Cirugía",
     duracion: 90,
-    medicos: ["Dr. Darwin Congo"],
     img: {
       uri: "https://images.unsplash.com/photo-1551076805-e1869033e561?w=500",
     },
   },
   {
-    id: "est",
+    id: "estetica",
     nombre: "Estética",
     duracion: 45,
-    medicos: ["Dr. Oscar Benalcázar"],
     img: {
       uri: "https://images.unsplash.com/photo-1606811841689-23dfddce3e95?w=500",
     },
   },
   {
-    id: "per",
+    id: "periodoncia",
     nombre: "Periodoncia",
     duracion: 30,
-    medicos: ["Dra. Eliana Cespedes"],
     img: {
       uri: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRaqA3a4FMjxIamyVTtGQj7cPs0qTjRjelO7g&s",
     },
   },
   {
-    id: "reh",
+    id: "rehabilitacion",
     nombre: "Rehabilitación",
     duracion: 60,
-    medicos: ["Dr. José Cargua"],
     img: {
       uri: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTGRLV8Z4wKO2wubIje4glcRu0QajOV7ermLg&s",
     },
   },
   {
-    id: "adop",
+    id: "odontopediatria",
     nombre: "Odontopediatría",
     duracion: 60,
-    medicos: ["Dra. Cinthia Benevides"],
     img: {
       uri: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQdw1rCOOQ4GmqRr7LCRE9MmB8GJtgpydrJSg&s",
     },
   },
   {
-    id: "rx",
+    id: "rayosx",
     nombre: "Rayos X",
     duracion: 60,
-    medicos: [], // Servicio sin médicos fijos
     img: {
       uri: "https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=500",
     },
@@ -172,13 +159,58 @@ const AgendarCitaClient = () => {
   const [loading, setLoading] = useState(false);
   const [bloquesOcupados, setBloquesOcupados] = useState([]);
 
-  // NUEVA LÓGICA: Evaluamos si el servicio actual requiere o no elegir médico obligatoriamente
-  const servicioRequiereMedico = servicioSel && servicioSel.medicos.length > 0;
+  // NUEVO ESTADO: Guarda los médicos traídos en tiempo real de Firestore
+  const [todosLosMedicos, setTodosLosMedicos] = useState([]);
 
-  // El paso del médico es válido si ya seleccionó uno REAL o si el servicio directamente no tiene médicos asociados
+  // --- ESCUCHA DE MÉDICOS DESDE FIRESTORE ---
+  useEffect(() => {
+    const q = query(collection(db, "medicos"), where("activo", "==", true));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const medicosFormateados = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setTodosLosMedicos(medicosFormateados);
+      },
+      (error) => {
+        console.error("Error cargando médicos en la vista cliente:", error);
+      },
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  // --- FILTRADO DINÁMICO DE MÉDICOS ---
+  const medicosFiltrados = useMemo(() => {
+    if (!servicioSel) return [];
+    return todosLosMedicos.filter(
+      (m) =>
+        m.especialidadId === servicioSel.id ||
+        m.especialidadNombre?.toLowerCase() ===
+          servicioSel.nombre.toLowerCase(),
+    );
+  }, [servicioSel, todosLosMedicos]);
+
+  // Evaluamos si el servicio actual tiene médicos registrados en el sistema
+  const servicioRequiereMedico = servicioSel && medicosFiltrados.length > 0;
+
+  // Construcción estricta del Grid con placeholders si hacen falta celdas vacías
+  const medicosGrid = useMemo(() => {
+    if (!servicioSel) return [];
+    let lista = medicosFiltrados.map((m) => m.nombre);
+    while (lista.length < 2) {
+      lista.push("Médico por asignar");
+    }
+    return lista;
+  }, [servicioSel, medicosFiltrados]);
+
+  // Validación de paso completado
   const tieneMedicoValido = useMemo(() => {
     if (!servicioSel) return false;
-    if (!servicioRequiereMedico) return true; // Avanza directo si no hay médicos en la lista nativa
+    if (!servicioRequiereMedico) return true;
     return medicoSel && medicoSel !== "Médico por asignar";
   }, [servicioSel, medicoSel, servicioRequiereMedico]);
 
@@ -189,19 +221,10 @@ const AgendarCitaClient = () => {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
 
-  const medicosGrid = useMemo(() => {
-    if (!servicioSel) return [];
-    let lista = [...servicioSel.medicos];
-    while (lista.length < 2) {
-      lista.push("Médico por asignar");
-    }
-    return lista;
-  }, [servicioSel]);
-
+  // --- ESCUCHA DE HORARIOS OCUPADOS (AGENDA) ---
   useEffect(() => {
     if (!fechaSel || !servicioSel) return;
 
-    // Si el servicio no tiene médicos, buscamos la agenda general del servicio o enviamos vacío
     const medicoQuery = servicioRequiereMedico ? medicoSel : "Por asignar";
     if (servicioRequiereMedico && !medicoSel) return;
 
@@ -239,6 +262,7 @@ const AgendarCitaClient = () => {
           const nombreAviso = servicioRequiereMedico
             ? medicoSel
             : servicioSel.nombre;
+
           if (Platform.OS === "web") {
             alert(
               `El horario de las ${horaSel} ya no está disponible para ${nombreAviso}.`,
@@ -257,15 +281,18 @@ const AgendarCitaClient = () => {
     );
 
     return () => unsubscribe();
-  }, [fechaSel, medicoSel, servicioSel]);
+  }, [fechaSel, medicoSel, servicioSel, servicioRequiereMedico]);
 
+  // --- GENERACIÓN DE SLOTS DE HORARIOS ---
   const horariosFiltrados = useMemo(() => {
     const slots = [];
     const ahora = new Date();
     const hoyLocal = getHoyLocal();
     const esHoy = fechaSel === hoyLocal;
-    const horaActual = ahora.getHours();
-    const minActual = ahora.getMinutes();
+    const { 0: horaActual, 1: minActual } = [
+      ahora.getHours(),
+      ahora.getMinutes(),
+    ];
 
     for (let h = 8; h < 18; h++) {
       for (let m = 0; m < 60; m += 15) {
@@ -282,6 +309,7 @@ const AgendarCitaClient = () => {
     return slots;
   }, [fechaSel, bloquesOcupados]);
 
+  // --- ENVÍO DE FORMULARIO A FIRESTORE ---
   const enviarSolicitud = async () => {
     if (!estaListo) return;
     setLoading(true);
@@ -394,6 +422,7 @@ const AgendarCitaClient = () => {
         ref={scrollRef}
         contentContainerStyle={{ paddingBottom: 120 }}
       >
+        {/* HEADER */}
         <View style={styles.header}>
           <View style={styles.headerTopRow}>
             <TouchableOpacity
@@ -418,7 +447,7 @@ const AgendarCitaClient = () => {
           </View>
         </View>
 
-        {/* PASO 1 */}
+        {/* PASO 1: SERVICIOS */}
         <View style={styles.section}>
           <Text style={styles.label}>1. Elige un servicio</Text>
           <View style={styles.grid}>
@@ -434,8 +463,7 @@ const AgendarCitaClient = () => {
                   setMedicoSel(null);
                   setFechaSel(null);
                   setHoraSel(null);
-                  // Desplazamiento inteligente condicional
-                  const proxY = item.medicos.length > 0 ? 380 : 620;
+                  const proxY = 380;
                   scrollRef.current?.scrollTo({ y: proxY, animated: true });
                 }}
               >
@@ -458,7 +486,7 @@ const AgendarCitaClient = () => {
           </View>
         </View>
 
-        {/* PASO 2 */}
+        {/* PASO 2: DOCTORES DINÁMICOS */}
         <View style={styles.section}>
           <Text style={[styles.label, !servicioSel && styles.disabledText]}>
             2. Selecciona el Profesional
@@ -533,7 +561,7 @@ const AgendarCitaClient = () => {
           )}
         </View>
 
-        {/* PASO 3 */}
+        {/* PASO 3: CALENDARIO */}
         <View style={styles.section}>
           <Text
             style={[styles.label, !tieneMedicoValido && styles.disabledText]}
@@ -562,7 +590,7 @@ const AgendarCitaClient = () => {
           />
         </View>
 
-        {/* PASO 4 */}
+        {/* PASO 4: HORARIOS */}
         <View style={styles.section}>
           <Text style={[styles.label, !fechaSel && styles.disabledText]}>
             4. Elige el horario
@@ -601,7 +629,7 @@ const AgendarCitaClient = () => {
         </View>
       </ScrollView>
 
-      {/* Botón Flotante */}
+      {/* BOTÓN FLOTANTE */}
       {servicioSel && (
         <TouchableOpacity
           style={[
