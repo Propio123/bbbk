@@ -16,17 +16,15 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Linking,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { auth, db } from "../src/api/firebase.config";
 import { COLORS } from "../src/constants/theme";
@@ -187,38 +185,57 @@ export default function AdminMasterPanel() {
     }
   };
   // --- ACCIÓN PARA LIBERAR CITA ---
+  import { Platform, Alert } from "react-native";
+
   const handleLiberarCita = (cita) => {
-    Alert.alert(
-      "Liberar Bloque Horario",
-      `¿Estás seguro de que deseas cancelar y liberar la cita de las ${cita.hora} para el paciente ${cita.NombrePaciente || cita.pacienteNombre}?`,
-      [
+    const mensaje = `¿Estás seguro de que deseas cancelar y liberar la cita de las ${cita.hora} para el paciente ${cita.NombrePaciente || cita.pacienteNombre}?`;
+
+    // 1. Lógica core que ejecuta la eliminación en Firebase
+    const ejecutarEliminacion = async () => {
+      setLoading(true);
+      try {
+        // Eliminamos la cita de la base de datos para dejar el espacio libre
+        await deleteDoc(doc(db, "citas", cita.id));
+        setCitaEnEdicion(null);
+
+        if (Platform.OS === "web") {
+          alert("El espacio horario ha sido liberado correctamente.");
+        } else {
+          Alert.alert(
+            "Éxito",
+            "El espacio horario ha sido liberado correctamente.",
+          );
+        }
+      } catch (e) {
+        console.error(e);
+        if (Platform.OS === "web") {
+          alert("No se pudo liberar la cita en el servidor.");
+        } else {
+          Alert.alert("Error", "No se pudo liberar la cita en el servidor.");
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // 2. Bifurcación según la plataforma
+    if (Platform.OS === "web") {
+      // Confirmación nativa del navegador para la Web
+      const confirmar = window.confirm(mensaje);
+      if (confirmar) {
+        ejecutarEliminacion();
+      }
+    } else {
+      // Alerta nativa para Android / iOS
+      Alert.alert("Liberar Bloque Horario", mensaje, [
         { text: "No, mantener", style: "cancel" },
         {
           text: "Sí, liberar espacio",
           style: "destructive",
-          onPress: async () => {
-            setLoading(true);
-            try {
-              // Eliminamos la cita de la base de datos para dejar el espacio libre
-              await deleteDoc(doc(db, "citas", cita.id));
-              setCitaEnEdicion(null);
-              Alert.alert(
-                "Éxito",
-                "El espacio horario ha sido liberado correctamente.",
-              );
-            } catch (e) {
-              console.error(e);
-              Alert.alert(
-                "Error",
-                "No se pudo liberar la cita en el servidor.",
-              );
-            } finally {
-              setLoading(false);
-            }
-          },
+          onPress: ejecutarEliminacion,
         },
-      ],
-    );
+      ]);
+    }
   };
   const handleEliminarMedico = (id, nombreDoc) => {
     Alert.alert(
