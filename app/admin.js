@@ -950,111 +950,135 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
               );
             })}
           </ScrollView>
+{/* BOTONES DE ACCIÓN DE LA CITA */}
+<View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+  
+  {/* APROBAR CITA */}
+  {citaEnEdicion.estado === "pendiente" && (
+    <TouchableOpacity
+      disabled={loading} // Evita doble clic accidental
+      onPress={async () => {
+        setLoading(true);
+        try {
+          await updateDoc(doc(db, "citas", citaEnEdicion.id), {
+            estado: "aprobado",
+          });
+          // Cerramos el modal SOLO después de que Firebase responda con éxito
+          setCitaEnEdicion(null); 
+        } catch (error) {
+          console.error("Error al aprobar:", error);
+        } finally {
+          setLoading(false);
+        }
+      }}
+      style={[styles.btnAction, { backgroundColor: "#2196F3", opacity: loading ? 0.6 : 1 }]}
+    >
+      <MaterialCommunityIcons
+        name="check-circle-outline"
+        size={16}
+        color="#fff"
+      />
+      <Text style={styles.btnActionText}> APROBAR CITA</Text>
+    </TouchableOpacity>
+  )}
 
-          {/* BOTONES DE ACCIÓN DE LA CITA */}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {citaEnEdicion.estado === "pendiente" && (
-              <TouchableOpacity
-                onPress={async () => {
-                  setLoading(true);
-                  await updateDoc(doc(db, "citas", citaEnEdicion.id), {
-                    estado: "aprobado",
-                  });
-                  setCitaEnEdicion(null);
-                  setLoading(false);
-                }}
-                style={[styles.btnAction, { backgroundColor: "#2196F3" }]}
-              >
-                <MaterialCommunityIcons
-                  name="check-circle-outline"
-                  size={16}
-                  color="#fff"
-                />
-                <Text style={styles.btnActionText}> APROBAR CITA</Text>
-              </TouchableOpacity>
-            )}
+  {/* CLIENTE CONFIRMÓ */}
+  {citaEnEdicion.estado === "aprobado" && (
+    <TouchableOpacity
+      disabled={loading}
+      onPress={async () => {
+        setLoading(true);
+        try {
+          await updateDoc(doc(db, "citas", citaEnEdicion.id), {
+            estado: "confirmado",
+          });
+          setCitaEnEdicion(null);
+        } catch (error) {
+          console.error("Error al confirmar:", error);
+        } finally {
+          setLoading(false);
+        }
+      }}
+      style={[styles.btnAction, { backgroundColor: "#4CAF50", opacity: loading ? 0.6 : 1 }]}
+    >
+      <MaterialCommunityIcons
+        name="whatsapp"
+        size={16}
+        color="#fff"
+      />
+      <Text style={styles.btnActionText}> CLIENTE CONFIRMÓ</Text>
+    </TouchableOpacity>
+  )}
 
-            {citaEnEdicion.estado === "aprobado" && (
-              <TouchableOpacity
-                onPress={async () => {
-                  setLoading(true);
-                  await updateDoc(doc(db, "citas", citaEnEdicion.id), {
-                    estado: "confirmado",
-                  });
-                  setCitaEnEdicion(null);
-                  setLoading(false);
-                }}
-                style={[styles.btnAction, { backgroundColor: "#4CAF50" }]}
-              >
-                <MaterialCommunityIcons
-                  name="whatsapp"
-                  size={16}
-                  color="#fff"
-                />
-                <Text style={styles.btnActionText}> CLIENTE CONFIRMÓ</Text>
-              </TouchableOpacity>
-            )}
+  {/* GUARDAR CAMBIOS */}
+  <TouchableOpacity
+    disabled={loading}
+    onPress={() => guardarCambioMedico()}
+    style={[
+      styles.btnAction,
+      { backgroundColor: COLORS.primaryGreen || "#8CC63F", opacity: loading ? 0.6 : 1 },
+    ]}
+  >
+    <MaterialCommunityIcons
+      name="content-save"
+      size={16}
+      color="#fff"
+    />
+    <Text style={styles.btnActionText}> GUARDAR CAMBIOS</Text>
+  </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={() => guardarCambioMedico()}
-              style={[
-                styles.btnAction,
-                { backgroundColor: COLORS.primaryGreen || "#8CC63F" },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="content-save"
-                size={16}
-                color="#fff"
-              />
-              <Text style={styles.btnActionText}> GUARDAR CAMBIOS</Text>
-            </TouchableOpacity>
+  {/* FINALIZAR */}
+  {citaEnEdicion.estado !== "pendiente" && citaEnEdicion.estado !== "finalizado" && (
+    <TouchableOpacity
+      disabled={loading}
+      onPress={async () => {
+        setLoading(true);
+        try {
+          await updateDoc(doc(db, "citas", citaEnEdicion.id), {
+            estado: "finalizado",
+          });
+          setCitaEnEdicion(null);
+        } catch (error) {
+          console.error("Error al finalizar:", error);
+        } finally {
+          setLoading(false);
+        }
+      }}
+      style={[styles.btnAction, { backgroundColor: "#9C27B0", opacity: loading ? 0.6 : 1 }]}
+    >
+      <MaterialCommunityIcons
+        name="account-check"
+        size={16}
+        color="#fff"
+      />
+      <Text style={styles.btnActionText}> FINALIZAR</Text>
+    </TouchableOpacity>
+  )}
 
-            {citaEnEdicion.estado !== "pendiente" && (
-              <TouchableOpacity
-                onPress={async () => {
-                  setLoading(true);
-                  await updateDoc(doc(db, "citas", citaEnEdicion.id), {
-                    estado: "finalizado",
-                  });
-                  setCitaEnEdicion(null);
-                  setLoading(false);
-                }}
-                style={[styles.btnAction, { backgroundColor: "#9C27B0" }]}
-              >
-                <MaterialCommunityIcons
-                  name="account-check"
-                  size={16}
-                  color="#fff"
-                />
-                <Text style={styles.btnActionText}> FINALIZAR</Text>
-              </TouchableOpacity>
-            )}
+  {/* CANCELAR / LIBERAR CITA (Oculto si está cargando o ya finalizó) */}
+  {!loading && citaEnEdicion.estado !== "finalizado" && (
+    <TouchableOpacity
+      onPress={() => handleLiberarCita(citaEnEdicion)}
+      style={[styles.btnAction, { backgroundColor: "#FF5252" }]}
+    >
+      <MaterialCommunityIcons
+        name="calendar-remove"
+        size={16}
+        color="#fff"
+      />
+      <Text style={styles.btnActionText}> CANCELAR / LIBERAR</Text>
+    </TouchableOpacity>
+  )}
 
-            {/* NUEVO BOTÓN: LIBERAR / CANCELAR CITA */}
-            {citaEnEdicion.estado !== "finalizado" && (
-              <TouchableOpacity
-                onPress={() => handleLiberarCita(citaEnEdicion)}
-                style={[styles.btnAction, { backgroundColor: "#FF5252" }]}
-              >
-                <MaterialCommunityIcons
-                  name="calendar-remove"
-                  size={16}
-                  color="#fff"
-                />
-                <Text style={styles.btnActionText}> CANCELAR / LIBERAR</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity
-              onPress={() => setCitaEnEdicion(null)}
-              style={styles.btnCancelText}
-            >
-              <Text style={{ color: "#666", fontWeight: "bold" }}>CERRAR</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
+  {/* CERRAR */}
+  <TouchableOpacity
+    disabled={loading}
+    onPress={() => setCitaEnEdicion(null)}
+    style={styles.btnCancelText}
+  >
+    <Text style={{ color: "#666", fontWeight: "bold" }}>CERRAR</Text>
+  </TouchableOpacity>
+</View>
 
       {/* MODAL WHATSAPP */}
       <Modal
