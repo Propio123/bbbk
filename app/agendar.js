@@ -309,7 +309,8 @@ const AgendarCitaClient = () => {
       const user = auth.currentUser;
       let nombreRealPaciente = "Paciente Registrado";
       let telefonoRealPaciente = "";
-      let historiaClinicaPaciente = "No asignada"; // Inicializador por defecto
+      let historiaClinicaPaciente = "No asignada";
+      let cedulaPaciente = "No registrada"; // <-- Inicializador por defecto para la cédula
 
       if (user) {
         // Intento 1: Obtener directamente por UID de documento
@@ -322,6 +323,7 @@ const AgendarCitaClient = () => {
             if (data.telefono) telefonoRealPaciente = data.telefono;
             if (data.numHistoriaClinica)
               historiaClinicaPaciente = data.numHistoriaClinica;
+            if (data.cedula) cedulaPaciente = data.cedula.trim(); // <-- Carga de cédula Intento 1
           }
         } catch (e1) {
           console.log("I1 fallido:", e1.message);
@@ -341,6 +343,7 @@ const AgendarCitaClient = () => {
               if (data.telefono) telefonoRealPaciente = data.telefono;
               if (data.numHistoriaClinica)
                 historiaClinicaPaciente = data.numHistoriaClinica;
+              if (data.cedula) cedulaPaciente = data.cedula.trim(); // <-- Carga de cédula Intento 2
             }
           } catch (e2) {
             console.log("I2 fallido:", e2.message);
@@ -350,12 +353,13 @@ const AgendarCitaClient = () => {
 
       const medicoFinal = servicioRequiereMedico ? medicoSel : "Por asignar";
 
-      // Guardamos la cita en Firestore
+      // Guardamos la cita en Firestore incluyendo la cédula
       const docCitaRef = await addDoc(collection(db, "citas"), {
         pacienteId: user ? user.uid : "anonimo",
         NombrePaciente: nombreRealPaciente,
         telefonoPaciente: telefonoRealPaciente,
-        numHistoriaClinica: historiaClinicaPaciente, // Guardamos la H.C. también en el registro de la cita
+        numHistoriaClinica: historiaClinicaPaciente,
+        cedula: cedulaPaciente, // <-- Guardada en la colección de citas
         servicio: servicioSel.nombre,
         duracion: servicioSel.duracion,
         fecha: fechaSel,
@@ -374,11 +378,12 @@ const AgendarCitaClient = () => {
         estado: "pendiente",
       });
 
-      // MODIFICADO: Estructura del mensaje para incluir el número de historia clínica
+      // Estructura del mensaje para incluir H.C. y Cédula
       const msg =
         `🦷 *Nueva Solicitud de Cita*\n\n` +
         `👤 *Paciente:* ${nombreRealPaciente}\n` +
-        `🗂️ *H.C. N°:* ${historiaClinicaPaciente}\n` + // <-- Agregado en el cuerpo del mensaje
+        `💳 *Cédula:* ${cedulaPaciente}\n` + // <-- Agregada en el WhatsApp
+        `🗂️ *H.C. N°:* ${historiaClinicaPaciente}\n` +
         `✨ *Servicio:* ${servicioSel.nombre}\n` +
         `👨‍⚕️ *Médico:* ${medicoFinal}\n` +
         `🗓️ *Fecha:* ${fechaSel}\n` +
@@ -397,12 +402,37 @@ const AgendarCitaClient = () => {
       }
 
       const telefonoClinica = "593999036517";
-      const whatsappUrl =
-        Platform.OS === "web"
-          ? `https://wa.me/${telefonoClinica}?text=${encodeURIComponent(msg)}`
-          : `whatsapp://send?phone=${telefonoClinica}&text=${encodeURIComponent(msg)}`;
+      let whatsappUrl = "";
 
-      await Linking.openURL(whatsappUrl);
+      if (Platform.OS === "web") {
+        // Detección estricta de entorno iOS dentro del navegador
+        const isIOS =
+          /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
+        if (isIOS) {
+          // Enlace universal: Resuelve el bypass del sandbox de Safari/Chrome en iOS
+          whatsappUrl = `https://api.whatsapp.com/send?phone=${telefonoClinica}&text=${encodeURIComponent(msg)}`;
+        } else {
+          whatsappUrl = `https://wa.me/${telefonoClinica}?text=${encodeURIComponent(msg)}`;
+        }
+      } else {
+        // Protocolo nativo seguro para las Apps compiladas (Android/iOS)
+        whatsappUrl = `whatsapp://send?phone=${telefonoClinica}&text=${encodeURIComponent(msg)}`;
+      }
+
+      // Ejecución del redireccionamiento adaptado
+      try {
+        if (Platform.OS === "web") {
+          // En iOS Web, si se bloquea el popup por culpa de los awaits anteriores, el fallback asigna la pestaña actual
+          window.open(whatsappUrl, "_blank") ||
+            window.location.assign(whatsappUrl);
+        } else {
+          await Linking.openURL(whatsappUrl);
+        }
+      } catch (err) {
+        console.log("Error al abrir WhatsApp:", err);
+        if (Platform.OS === "web") window.location.href = whatsappUrl;
+      }
 
       // Limpieza de estados
       setServicioSel(null);
