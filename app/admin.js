@@ -692,21 +692,68 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
       {/* SECTOR DE CALENDARIO */}
       {vistaActual === "agenda" && (
         <View style={styles.calendarNavContainer}>
-          <TouchableOpacity
-            style={styles.calendarButton}
-            onPress={() => setMostrarCalendario(true)}
-          >
-            <MaterialCommunityIcons
-              name="calendar-search"
-              size={22}
-              color="#fff"
-            />
-            <Text style={styles.calendarButtonText}>
-              Buscar Fecha: {fechaSel}
-            </Text>
-          </TouchableOpacity>
+          {/* En Móvil mostramos el botón clásico, en Web renderizamos el selector nativo del navegador */}
+          {Platform.OS !== "web" ? (
+            <TouchableOpacity
+              style={styles.calendarButton}
+              onPress={() => setMostrarCalendario(true)}
+            >
+              <MaterialCommunityIcons
+                name="calendar-search"
+                size={22}
+                color="#fff"
+              />
+              <Text style={styles.calendarButtonText}>
+                Buscar Fecha: {fechaSel}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            /* SOLUCIÓN WEB: Input de fecha nativo HTML5 estilizado */
+            <View
+              style={[
+                styles.calendarButton,
+                {
+                  paddingHorizontal: 10,
+                  flexDirection: "row",
+                  alignItems: "center",
+                },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="calendar-search"
+                size={22}
+                color="#fff"
+                style={{ marginRight: 8 }}
+              />
+              <input
+                type="date"
+                value={fechaSel} // Debe estar en formato YYYY-MM-DD
+                onChange={(e) => {
+                  const nuevaFecha = e.target.value; // Retorna "YYYY-MM-DD"
+                  if (nuevaFecha) {
+                    // Simulamos el comportamiento del evento nativo para que tu función 'onDateChange' funcione idéntica
+                    onDateChange(
+                      { type: "set" },
+                      new Date(nuevaFecha + "T12:00:00"),
+                    );
+                  }
+                }}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#fff",
+                  fontSize: "16px",
+                  fontFamily: "inherit",
+                  outline: "none",
+                  cursor: "pointer",
+                  width: "100%",
+                }}
+              />
+            </View>
+          )}
 
-          {mostrarCalendario && (
+          {/* CALENDARIO NATIVO (Solo para Android / iOS) */}
+          {Platform.OS !== "web" && mostrarCalendario && (
             <DateTimePicker
               value={new Date(fechaSel + "T12:00:00")}
               mode="date"
@@ -859,7 +906,7 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
           />
         </View>
       )}
-      {/* PANEL EDICIÓN DE CITA */}
+
       {/* PANEL EDICIÓN DE CITA */}
       {citaEnEdicion && (
         <View style={styles.editPanel}>
@@ -957,14 +1004,14 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
             {/* APROBAR CITA */}
             {citaEnEdicion.estado === "pendiente" && (
               <TouchableOpacity
-                disabled={loading} // Evita doble clic accidental
-                onPress={async () => {
+                disabled={loading}
+                onPress={async (e) => {
+                  if (e && e.stopPropagation) e.stopPropagation(); // Evita que el clic viaje al fondo
                   setLoading(true);
                   try {
                     await updateDoc(doc(db, "citas", citaEnEdicion.id), {
                       estado: "aprobado",
                     });
-                    // Cerramos el modal SOLO después de que Firebase responda con éxito
                     setCitaEnEdicion(null);
                   } catch (error) {
                     console.error("Error al aprobar:", error);
@@ -990,7 +1037,8 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
             {citaEnEdicion.estado === "aprobado" && (
               <TouchableOpacity
                 disabled={loading}
-                onPress={async () => {
+                onPress={async (e) => {
+                  if (e && e.stopPropagation) e.stopPropagation();
                   setLoading(true);
                   try {
                     await updateDoc(doc(db, "citas", citaEnEdicion.id), {
@@ -1020,7 +1068,10 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
             {/* GUARDAR CAMBIOS */}
             <TouchableOpacity
               disabled={loading}
-              onPress={() => guardarCambioMedico()}
+              onPress={(e) => {
+                if (e && e.stopPropagation) e.stopPropagation();
+                guardarCambioMedico();
+              }}
               style={[
                 styles.btnAction,
                 {
@@ -1042,7 +1093,8 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
               citaEnEdicion.estado !== "finalizado" && (
                 <TouchableOpacity
                   disabled={loading}
-                  onPress={async () => {
+                  onPress={async (e) => {
+                    if (e && e.stopPropagation) e.stopPropagation();
                     setLoading(true);
                     try {
                       await updateDoc(doc(db, "citas", citaEnEdicion.id), {
@@ -1069,11 +1121,18 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
                 </TouchableOpacity>
               )}
 
-            {/* CANCELAR / LIBERAR CITA (Oculto si está cargando o ya finalizó) */}
-            {!loading && citaEnEdicion.estado !== "finalizado" && (
+            {/* CANCELAR / LIBERAR CITA */}
+            {citaEnEdicion.estado !== "finalizado" && (
               <TouchableOpacity
-                onPress={() => handleLiberarCita(citaEnEdicion)}
-                style={[styles.btnAction, { backgroundColor: "#FF5252" }]}
+                disabled={loading}
+                onPress={(e) => {
+                  if (e && e.stopPropagation) e.stopPropagation();
+                  handleLiberarCita(citaEnEdicion);
+                }}
+                style={[
+                  styles.btnAction,
+                  { backgroundColor: "#FF5252", opacity: loading ? 0.6 : 1 },
+                ]}
               >
                 <MaterialCommunityIcons
                   name="calendar-remove"
