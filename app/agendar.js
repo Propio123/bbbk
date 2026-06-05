@@ -224,7 +224,13 @@ const AgendarCitaClient = () => {
       collection(db, "agenda_medica"),
       where("fecha", "==", fechaSel),
       where("medico", "==", medicoQuery),
-      where("estado", "in", ["pendiente", "confirmada"]),
+      where("estado", "in", [
+        "pendiente",
+        "aprobado",
+        "confirmado",
+        "confirmada",
+        "finalizado",
+      ]),
     );
 
     const unsubscribe = onSnapshot(

@@ -232,7 +232,13 @@ export default function AdminMasterPanel() {
         ? query(
             collection(db, "citas"),
             where("fecha", "==", fechaSel),
-            where("estado", "in", ["pendiente", "confirmada"]), // Opcional: Filtra estados válidos para el Grid
+            where("estado", "in", [
+              "pendiente",
+              "aprobado",
+              "confirmado",
+              "confirmada",
+              "finalizado",
+            ]), // Opcional: Filtra estados válidos para el Grid
           )
         : query(collection(db, "users"));
 
@@ -1154,6 +1160,26 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
               )}
 
             {/* CANCELAR / LIBERAR CITA */}
+            {citaEnEdicion.estado !== "finalizado" && (
+              <TouchableOpacity
+                disabled={loading}
+                onPress={(e) => {
+                  if (e && e.stopPropagation) e.stopPropagation();
+                  handleLiberarCita(citaEnEdicion);
+                }}
+                style={[
+                  styles.btnAction,
+                  { backgroundColor: "#FF5252", opacity: loading ? 0.6 : 1 },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="calendar-remove"
+                  size={16}
+                  color="#fff"
+                />
+                <Text style={styles.btnActionText}> CANCELAR / LIBERAR</Text>
+              </TouchableOpacity>
+            )}
 
             {/* CERRAR */}
             <TouchableOpacity
