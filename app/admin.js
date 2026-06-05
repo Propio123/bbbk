@@ -1002,19 +1002,46 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
           {/* BOTONES DE ACCIÓN DE LA CITA */}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {/* APROBAR CITA */}
+            {/* APROBAR CITA CORREGIDO */}
             {citaEnEdicion.estado === "pendiente" && (
               <TouchableOpacity
                 disabled={loading}
                 onPress={async (e) => {
-                  if (e && e.stopPropagation) e.stopPropagation(); // Evita que el clic viaje al fondo
+                  if (e && e.stopPropagation) e.stopPropagation();
                   setLoading(true);
                   try {
-                    await updateDoc(doc(db, "citas", citaEnEdicion.id), {
+                    // 1. Actualizar el documento en la colección de Citas
+                    const citaRef = doc(db, "citas", citaEnEdicion.id);
+                    await updateDoc(citaRef, {
                       estado: "aprobado",
                     });
+
+                    // 2. CORRECCIÓN DEL GRID: Actualizar el espejo en la agenda médica
+                    // Buscamos el documento en agenda_medica que coincida con esta citaId
+                    const qAgenda = query(
+                      collection(db, "agenda_medica"),
+                      where("citaId", "==", citaEnEdicion.id),
+                    );
+                    const agendaSnapshot = await getDocs(qAgenda);
+
+                    if (!agendaSnapshot.empty) {
+                      const agendaDocRef = doc(
+                        db,
+                        "agenda_medica",
+                        agendaSnapshot.docs[0].id,
+                      );
+                      await updateDoc(agendaDocRef, {
+                        estado: "aprobado", // Ahora el 'agendaMap' leerá el nuevo estado
+                      });
+                    }
+
+                    // Cierre limpio del modal
                     setCitaEnEdicion(null);
                   } catch (error) {
-                    console.error("Error al aprobar:", error);
+                    console.error(
+                      "Error crítico al sincronizar aprobación con el Grid:",
+                      error,
+                    );
                   } finally {
                     setLoading(false);
                   }
