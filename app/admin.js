@@ -443,7 +443,12 @@ export default function AdminMasterPanel() {
       const q = query(
         collection(db, "citas"),
         where("fecha", "==", fechaBusqueda),
-        where("estado", "==", "aprobado"),
+        where("estado", "in", [
+          "pendiente",
+          "aprobado",
+          "confirmado",
+          "finalizado",
+        ]),
       );
 
       const snap = await getDocs(q);
