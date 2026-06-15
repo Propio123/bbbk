@@ -1020,7 +1020,118 @@ export default function AdminMasterPanel() {
                 </ScrollView>
               </View>
 
-              {/* BOTONES DE ACCIÓN */}
+              {/* ================= GESTIÓN DE ESTADO DE LA CITA ================= */}
+              <Text style={[styles.labelInput, { marginTop: 10 }]}>
+                Estado de la Cita:{" "}
+                <Text style={{ fontWeight: "bold" }}>
+                  {citaEnEdicion.estado?.toUpperCase()}
+                </Text>
+              </Text>
+
+              <View
+                style={[
+                  styles.filaBotonesModal,
+                  { marginBottom: 15, flexWrap: "wrap", gap: 8 },
+                ]}
+              >
+                {/* Caso 1: Está PENDIENTE -> Permite Aprobar */}
+                {citaEnEdicion.estado === "pendiente" && (
+                  <TouchableOpacity
+                    style={[
+                      styles.btnModal,
+                      {
+                        backgroundColor: "#E3F2FD",
+                        borderColor: "#BBDEFB",
+                        borderWidth: 1,
+                        flex: 1,
+                      },
+                    ]}
+                    onPress={() =>
+                      setCitaEnEdicion({ ...citaEnEdicion, estado: "aprobado" })
+                    }
+                  >
+                    <Text
+                      style={{
+                        color: "#0D47A1",
+                        fontWeight: "bold",
+                        fontSize: 13,
+                        textAlign: "center",
+                      }}
+                    >
+                      Aprobar Cita
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Caso 2: Está APROBADO -> Permite Confirmar */}
+                {citaEnEdicion.estado === "aprobado" && (
+                  <TouchableOpacity
+                    style={[
+                      styles.btnModal,
+                      {
+                        backgroundColor: "#FFF3E0",
+                        borderColor: "#FFE0B2",
+                        borderWidth: 1,
+                        flex: 1,
+                      },
+                    ]}
+                    onPress={() =>
+                      setCitaEnEdicion({
+                        ...citaEnEdicion,
+                        estado: "confirmado",
+                      })
+                    }
+                  >
+                    <Text
+                      style={{
+                        color: "#E65100",
+                        fontWeight: "bold",
+                        fontSize: 13,
+                        textAlign: "center",
+                      }}
+                    >
+                      Confirmar Cita
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Opción de Cancelar / Liberar (Disponible si no está finalizada o ya cancelada) */}
+                {["pendiente", "aprobado", "confirmado"].includes(
+                  citaEnEdicion.estado,
+                ) && (
+                  <TouchableOpacity
+                    style={[
+                      styles.btnModal,
+                      {
+                        backgroundColor: "#FFCDD2",
+                        borderColor: "#EF9A9A",
+                        borderWidth: 1,
+                        flex: 1,
+                      },
+                    ]}
+                    onPress={() =>
+                      setCitaEnEdicion({
+                        ...citaEnEdicion,
+                        estado: "cancelado",
+                      })
+                    }
+                  >
+                    <Text
+                      style={{
+                        color: "#B71C1C",
+                        fontWeight: "bold",
+                        fontSize: 13,
+                        textAlign: "center",
+                      }}
+                    >
+                      Cancelar / Liberar
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {/* ================================================================ */}
+
+              {/* BOTONES DE ACCIÓN FINALES */}
               <View style={styles.filaBotonesModal}>
                 <TouchableOpacity
                   style={[styles.btnModal, styles.btnModalCancelar]}
