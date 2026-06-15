@@ -80,7 +80,7 @@ const ClienteItem = ({
           />
         </View>
 
-        {/* FILA DE CÉDULA (Alineada igual que H.C.) */}
+        {/* FILA DE CÉDULA */}
         <View
           style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}
         >
@@ -88,14 +88,14 @@ const ClienteItem = ({
             Cédula:{" "}
           </Text>
           <TextInput
-            style={styles.hcInput} // Usamos el mismo estilo compacto para mantener simetría
+            style={styles.hcInput}
             placeholder="Ej: 100xxxxxx"
             placeholderTextColor="#999"
             value={cedula}
             onChangeText={setCedula}
             keyboardType="numeric"
-            maxLength={10} // Límite estándar para cédulas en Ecuador
-            onEndEditing={() => onUpdateCedula(item.id, cedula.trim())} // Guarda automáticamente al terminar
+            maxLength={10}
+            onEndEditing={() => onUpdateCedula(item.id, cedula.trim())}
           />
         </View>
       </View>
@@ -148,7 +148,7 @@ export default function AdminMasterPanel() {
   const [nuevoNombreMed, setNuevoNombreMed] = useState("");
   const [nuevaEspecialidadMed, setNuevaEspecialidadMed] = useState("");
 
-  // --- ESTADOS AGENDA ---
+  // --- ESTADOS AGENDA / REPROGRAMACIÓN ---
   const [fechaSel, setFechaSel] = useState(
     new Date().toISOString().split("T")[0],
   );
@@ -171,16 +171,13 @@ export default function AdminMasterPanel() {
   const [modalVisible, setModalVisible] = useState(false);
   const [citasManana, setCitasManana] = useState([]);
 
-  // 1. Listener de Especialidades / Médicos
-  // 1. Listener de Médicos (Adaptado para alimentar el Grid del Admin de forma global)
+  // 1. Listener de Médicos Activos para el Grid y Modales
   useEffect(() => {
-    // Escuchamos los médicos si el modal está abierto O si estamos en la vista de la agenda (para armar el Grid)
     if (!modalMedicos && vistaActual !== "agenda") return;
 
-    // Filtramos solo por los médicos activos para el Grid, ordenados alfabéticamente
     const q = query(
       collection(db, "medicos"),
-      where("activo", "==", true), // Asegura mostrar solo personal activo
+      where("activo", "==", true),
       orderBy("nombre", "asc"),
     );
 
@@ -191,8 +188,6 @@ export default function AdminMasterPanel() {
           id: doc.id,
           ...doc.data(),
         }));
-
-        // setListaMedicos se sigue actualizando en tiempo real para el Grid y el Modal
         setListaMedicos(medicosFormateados);
       },
       (error) => {
@@ -201,12 +196,20 @@ export default function AdminMasterPanel() {
     );
 
     return () => unsubscribe();
-  }, [modalMedicos, vistaActual]); // Añadida la dependencia 'vistaActual'
+  }, [modalMedicos, vistaActual]);
+
+  // Asignar médico por defecto al Grid al cargar
+  useEffect(() => {
+    if (listaMedicos.length > 0 && !medicoActivoGrid) {
+      setMedicoActivoGrid(listaMedicos[0].nombre);
+    }
+  }, [listaMedicos]);
+
+  // 2. Generación del Mapa de Agenda en memoria (Bloques de 15 min)
   const agendaMap = useMemo(() => {
     const mapa = {};
     if (!medicoActivoGrid) return mapa;
 
-    // Filtramos las citas de la fecha que pertenecen al médico activo en el Grid
     const citasDelMedico = citas.filter((c) => c.medico === medicoActivoGrid);
 
     citasDelMedico.forEach((cita) => {
@@ -217,7 +220,7 @@ export default function AdminMasterPanel() {
         const tiempoStr = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
         mapa[tiempoStr] = {
           ...cita,
-          esInicio: i === 0, // Identificador para pintar el nombre del paciente solo en la primera celda
+          esInicio: i === 0,
         };
 
         m += 15;
@@ -229,7 +232,8 @@ export default function AdminMasterPanel() {
     });
     return mapa;
   }, [citas, medicoActivoGrid]);
-  // 2. Listener de Citas o Clientes (Mantiene la reactividad por fecha)
+
+  // 3. Listener Reactivo de Citas por Fecha o de Clientes
   useEffect(() => {
     const q =
       vistaActual === "agenda"
@@ -242,7 +246,8 @@ export default function AdminMasterPanel() {
               "confirmado",
               "confirmada",
               "finalizado",
-            ]), // Opcional: Filtra estados válidos para el Grid
+              "finalizada",
+            ]),
           )
         : query(collection(db, "users"));
 
@@ -263,29 +268,101 @@ export default function AdminMasterPanel() {
 
     return () => unsubData();
   }, [fechaSel, vistaActual]);
-  useEffect(() => {
-    if (listaMedicos.length > 0 && !medicoActivoGrid) {
-      setMedicoActivoGrid(listaMedicos[0].nombre);
-    }
-  }, [listaMedicos]);
-  // --- ACCIONES CRUD MÉDICOS ---
+
+  // --- ACCIONES DE AGERUPACIÓN Y REPORTES ---
   const citasAgrupadasPorMedico = useMemo(() => {
     if (vistaActual !== "agenda") return [];
-
     return listaMedicos.map((medico) => {
-      // Filtramos las citas de la fecha que le pertenecen a este médico específico
       const citasDelMedico = citas.filter(
         (cita) => cita.medico === medico.nombre,
       );
-
       return {
         ...medico,
-        citas: citasDelMedico.sort((a, b) => a.hora.localeCompare(b.hora)), // Ordenadas por hora cronológica
+        citas: citasDelMedico.sort((a, b) => a.hora.localeCompare(b.hora)),
       };
     });
   }, [citas, listaMedicos, vistaActual]);
+
+  const reporteCitasCerradas = useMemo(() => {
+    const conteo = {};
+    listaMedicos.forEach((m) => {
+      conteo[m.nombre] = 0;
+    });
+
+    citas.forEach((cita) => {
+      if (cita.estado === "finalizado" && conteo[cita.medico] !== undefined) {
+        conteo[cita.medico] += 1;
+      }
+    });
+    return conteo;
+  }, [citas, listaMedicos]);
+
+  // --- NUEVA ACCIÓN: CAMBIO DE ESTADO DIRECTO DESDE LOS BOTONES ---
+  const handleCambiarEstadoCita = async (citaId, nuevoEstado) => {
+    try {
+      await updateDoc(doc(db, "citas", citaId), { estado: nuevoEstado });
+    } catch (error) {
+      console.error("Error al cambiar estado de la cita:", error);
+      Alert.alert("Error", "No se pudo actualizar el estado.");
+    }
+  };
+
+  // --- ACCIÓN: GUARDAR REPROGRAMACIÓN COMPLETA (DÍA, HORA, MÉDICO) ---
+  const handleGuardarCambiosCita = async () => {
+    if (!citaEnEdicion) return;
+
+    const medicoCambio = nuevoMedicoParaCita !== citaEnEdicion.medico;
+    const horaCambio = nuevaHoraParaCita !== citaEnEdicion.hora;
+    const fechaCambio = nuevaFechaParaCita !== citaEnEdicion.fecha;
+
+    if (!medicoCambio && !horaCambio && !fechaCambio) {
+      setCitaEnEdicion(null);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // VALIDACIÓN ABSOLUTA EN FIRESTORE (Evita fallos si cambian a otra fecha fuera de la actual en el grid)
+      const qColision = query(
+        collection(db, "citas"),
+        where("medico", "==", nuevoMedicoParaCita),
+        where("fecha", "==", nuevaFechaParaCita),
+        where("hora", "==", nuevaHoraParaCita),
+      );
+
+      const snapColision = await getDocs(qColision);
+      const conflicto = snapColision.docs.find(
+        (d) => d.id !== citaEnEdicion.id && d.data().estado !== "finalizado",
+      );
+
+      if (conflicto) {
+        setLoading(false);
+        return Alert.alert(
+          "Horario Ocupado",
+          `El Dr(a). ${nuevoMedicoParaCita} ya tiene una cita agendada a las ${nuevaHoraParaCita} el día ${nuevaFechaParaCita}.`,
+        );
+      }
+
+      // Procedemos con la actualización en Firebase
+      const citaRef = doc(db, "citas", citaEnEdicion.id);
+      await updateDoc(citaRef, {
+        medico: nuevoMedicoParaCita,
+        hora: nuevaHoraParaCita,
+        fecha: nuevaFechaParaCita,
+      });
+
+      Alert.alert("Éxito", "La cita ha sido reprogramada correctamente.");
+      setCitaEnEdicion(null);
+    } catch (e) {
+      console.error("Error al reprogramar la cita: ", e);
+      Alert.alert("Error", "No se pudo actualizar la cita en el servidor.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- ACCIONES CRUD MÉDICOS ---
   const handleAgregarMedico = async () => {
-    // Limpiamos los textos y formateamos la especialidad a minúsculas o ID estandarizado
     const especialidadTexto = nuevaEspecialidadMed.trim();
     const nombreMedicoTexto = nuevoNombreMed.trim();
 
@@ -297,58 +374,42 @@ export default function AdminMasterPanel() {
       return;
     }
 
-    // Creamos un ID limpio para la especialidad (ej: "general", "ortodoncia")
-    const especialidadId = especialidadTexto
+    const BlacklistId = especialidadTexto
       .toLowerCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "");
 
     try {
       setLoading(true);
-
-      // 1. VERIFICAR Y CREAR LA ESPECIALIDAD SI NO EXISTE
-      const espRef = doc(db, "especialidades", especialidadId);
+      const espRef = doc(db, "especialidades", BlacklistId);
       const espSnap = await getDoc(espRef);
 
       if (!espSnap.exists()) {
-        // Si la especialidad no existe en la bdd, la creamos primero
-        await setDoc(espRef, {
-          nombre: especialidadTexto, // Mantiene el formato bonito (ej: "General")
-          activo: true,
-        });
+        // eslint-disable-next-line no-undef
+        await setDoc(espRef, { nombre: BlackspecialidadTexto, activo: true });
       }
 
-      // 2. CREAR EL NUEVO MÉDICO EN LA COLECCIÓN INDEPENDIENTE
       await addDoc(collection(db, "medicos"), {
         nombre: nombreMedicoTexto,
-        especialidadId: especialidadId, // Guardamos la relación al ID de la especialidad
-        especialidadNombre: especialidadTexto, // Atributo denormalizado para ahorrar lecturas en los grids
+        especialidadId: BlacklistId,
+        especialidadNombre: especialidadTexto,
         activo: true,
       });
 
-      // Limpiamos los campos del formulario
       setNuevoNombreMed("");
-      // Opcional: puedes dejar nuevaEspecialidadMed si van a ingresar más doctores en la misma área
-
-      Alert.alert(
-        "Éxito",
-        `${nombreMedicoTexto} ha sido registrado en la especialidad ${especialidadTexto}.`,
-      );
+      Alert.alert("Éxito", `${nombreMedicoTexto} registrado con éxito.`);
     } catch (error) {
-      console.error("Error completo al añadir médico/especialidad:", error);
-      Alert.alert(
-        "Error",
-        "No se pudo completar el registro debido a un problema de permisos o red.",
-      );
+      console.error(error);
+      Alert.alert("Error", "No se pudo completar el registro.");
     } finally {
       setLoading(false);
     }
   };
-  // --- ACCIÓN PARA LIBERAR CITA ---
+
   const handleLiberarCita = (cita) => {
     Alert.alert(
       "Liberar Bloque Horario",
-      `¿Estás seguro de que deseas cancelar y liberar la cita de las ${cita.hora} para el paciente ${cita.NombrePaciente || cita.pacienteNombre}?`,
+      `¿Estás seguro de cancelar y liberar la cita de las ${cita.hora}?`,
       [
         { text: "No, mantener", style: "cancel" },
         {
@@ -357,19 +418,11 @@ export default function AdminMasterPanel() {
           onPress: async () => {
             setLoading(true);
             try {
-              // Eliminamos la cita de la base de datos para dejar el espacio libre
               await deleteDoc(doc(db, "citas", cita.id));
               setCitaEnEdicion(null);
-              Alert.alert(
-                "Éxito",
-                "El espacio horario ha sido liberado correctamente.",
-              );
+              Alert.alert("Éxito", "Espacio liberado correctamente.");
             } catch (e) {
-              console.error(e);
-              Alert.alert(
-                "Error",
-                "No se pudo liberar la cita en el servidor.",
-              );
+              Alert.alert("Error", "No se pudo liberar la cita.");
             } finally {
               setLoading(false);
             }
@@ -378,6 +431,7 @@ export default function AdminMasterPanel() {
       ],
     );
   };
+
   const handleEliminarMedico = (id, nombre) => {
     Alert.alert(
       "Eliminar Especialista",
@@ -389,7 +443,6 @@ export default function AdminMasterPanel() {
           style: "destructive",
           onPress: async () => {
             try {
-              // Apuntar a la colección correcta "medicos"
               await deleteDoc(doc(db, "medicos", id));
             } catch (error) {
               console.error("Error al eliminar médico:", error);
@@ -400,53 +453,40 @@ export default function AdminMasterPanel() {
     );
   };
 
+  // --- MANEJO DE HISTORIAS, CÉDULAS Y MILLAS ---
   const handleUpdateMillas = async (userId, value) => {
     try {
       await updateDoc(doc(db, "users", userId), { puntosSalud: value });
-    } catch (e) {
-      Alert.alert("Error", "No se pudieron actualizar los puntos.");
-    }
+    } catch (e) {}
   };
 
   const handleUpdateHC = async (userId, value) => {
     try {
       await updateDoc(doc(db, "users", userId), { numHistoriaClinica: value });
-    } catch (e) {
-      Alert.alert(
-        "Error",
-        "No se pudo actualizar el número de historia clínica.",
-      );
-    }
+    } catch (e) {}
   };
+
   const handleUpdateCedula = async (userId, value) => {
     try {
       await updateDoc(doc(db, "users", userId), { cedula: value });
-    } catch (e) {
-      Alert.alert("Error", "No se pudo actualizar el número de cédula.");
-    }
+    } catch (e) {}
   };
 
   const handleIncrementMillas = async (userId, puntosActuales, cantidad) => {
     const actual = puntosActuales || 0;
     const nuevoValor =
       cantidad < 0 && actual < Math.abs(cantidad) ? 0 : actual + cantidad;
-
     try {
       await updateDoc(doc(db, "users", userId), { puntosSalud: nuevoValor });
-    } catch (e) {
-      Alert.alert("Error", "No se pudo modificar el puntaje.");
-    }
+    } catch (e) {}
   };
 
+  // --- RECORDATORIOS WHATSAPP ---
   const prepararConfirmaciones = async () => {
     const hoy = new Date();
     const manana = new Date(hoy);
     manana.setDate(hoy.getDate() + 1);
-
-    const yyyy = manana.getFullYear();
-    const mm = String(manana.getMonth() + 1).padStart(2, "0");
-    const dd = String(manana.getDate()).padStart(2, "0");
-    const fechaBusqueda = `${yyyy}-${mm}-${dd}`;
+    const fechaBusqueda = manana.toISOString().split("T")[0];
 
     setLoading(true);
     try {
@@ -460,23 +500,21 @@ export default function AdminMasterPanel() {
           "finalizado",
         ]),
       );
-
       const snap = await getDocs(q);
 
       if (snap.empty) {
-        Alert.alert("Aviso", `No hay citas aprobadas para: ${fechaBusqueda}`);
+        Alert.alert("Aviso", `No hay citas para: ${fechaBusqueda}`);
         setCitasManana([]);
       } else {
         const data = snap.docs.map((d) => ({
-          id: d.id,
           ...d.data(),
+          id: d.id,
           seleccionado: true,
         }));
         setCitasManana(data);
         setModalVisible(true);
       }
     } catch (e) {
-      console.error(e);
       Alert.alert("Error", "Error al conectar con Firestore.");
     } finally {
       setLoading(false);
@@ -488,138 +526,69 @@ export default function AdminMasterPanel() {
     if (seleccionados.length === 0) return;
 
     setModalVisible(false);
-
     for (const cita of seleccionados) {
       let tel = (cita.telefonoPaciente || cita.pacienteTelefono || "").replace(
         /\D/g,
         "",
       );
+      if (tel.startsWith("0")) tel = "593" + tel.substring(1);
+      else if (!tel.startsWith("593")) tel = "593" + tel;
 
-      if (tel.startsWith("0")) {
-        tel = "593" + tel.substring(1);
-      } else if (!tel.startsWith("593")) {
-        tel = "593" + tel;
-      }
-
-      const msg = `👋 Hola ${cita.NombrePaciente}, le saludamos de BBBK Odontología.
-
-Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}. Por favor, confirme su asistencia respondiendo a este mensaje.
-
-¡Será un gusto atenderle! 🦷 `;
+      const msg = `👋 Hola ${cita.NombrePaciente}, le recordamos su cita para mañana ${cita.fecha} a las ${cita.hora}. Por favor confirme su asistencia.`;
       const url = `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`;
 
       try {
         await Linking.openURL(url);
         await new Promise((r) => setTimeout(r, 1500));
-      } catch (err) {
-        console.log("Error al abrir WhatsApp para:", tel);
-      }
+      } catch (err) {}
     }
-    Alert.alert(
-      "Proceso completado",
-      "Se abrieron las ventanas de WhatsApp de manera secuencial.",
-    );
   };
-  const renderMedicoItem = useCallback(({ item }) => (
-    <View style={styles.doctorItemCrudRow}>
-      <View style={{ flex: 1, marginRight: 8 }}>
-        {/* 1. Mostramos la especialidad arriba (ej: General) */}
-        <Text style={styles.doctorItemCrudService}>
-          {item.especialidadNombre || "Sin Especialidad"}
-        </Text>
 
-        {/* 2. El TextInput debe usar item.nombre (Dra. Vanessa) */}
-        <TextInput
-          style={styles.inputEdit}
-          defaultValue={item.nombre} // <-- CAMBIADO: Antes era item.medico
-          placeholder="Nombre del médico"
-          onEndEditing={async (e) => {
-            const nuevoTexto = e.nativeEvent.text.trim();
-            if (nuevoTexto && nuevoTexto !== item.nombre) {
-              try {
-                await updateDoc(doc(db, "medicos", item.id), {
-                  nombre: nuevoTexto, // <-- CAMBIADO: Modifica la colección medicos
-                });
-              } catch (error) {
-                console.error("Error al actualizar médico:", error);
+  // --- COMPONENTES AUXILIARES ---
+  const renderMedicoItem = useCallback(
+    ({ item }) => (
+      <View style={styles.doctorItemCrudRow}>
+        <View style={{ flex: 1, marginRight: 8 }}>
+          <Text style={styles.doctorItemCrudService}>
+            {item.especialidadNombre || "Sin Especialidad"}
+          </Text>
+          <TextInput
+            style={styles.inputEdit}
+            defaultValue={item.nombre}
+            placeholder="Nombre del médico"
+            onEndEditing={async (e) => {
+              const nuevoTexto = e.nativeEvent.text.trim();
+              if (nuevoTexto && nuevoTexto !== item.nombre) {
+                try {
+                  await updateDoc(doc(db, "medicos", item.id), {
+                    nombre: nuevoTexto,
+                  });
+                } catch (error) {
+                  console.error(error);
+                }
               }
-            }
-          }}
-        />
+            }}
+          />
+        </View>
+        <TouchableOpacity
+          style={styles.btnEliminarDoctor}
+          onPress={() => handleEliminarMedico(item.id, item.nombre)}
+        >
+          <MaterialCommunityIcons
+            name="trash-can-outline"
+            size={22}
+            color="#FF5252"
+          />
+        </TouchableOpacity>
       </View>
+    ),
+    [],
+  );
 
-      <TouchableOpacity
-        style={styles.btnEliminarDoctor}
-        onPress={() => handleEliminarMedico(item.id, item.nombre)} // <-- CAMBIADO: Pasar item.nombre
-      >
-        <MaterialCommunityIcons
-          name="trash-can-outline"
-          size={22}
-          color="#FF5252"
-        />
-      </TouchableOpacity>
-    </View>
-  )); // Se pasa la dependencia de la función de eliminación
-  const handleGuardarCambiosCita = async () => {
-    if (!citaEnEdicion) return;
-
-    const medicoCambio = nuevoMedicoParaCita !== citaEnEdicion.medico;
-    const horaCambio = nuevaHoraParaCita !== citaEnEdicion.hora;
-    const fechaCambio = nuevaFechaParaCita !== citaEnEdicion.fecha;
-
-    // Si absolutamente nada cambió, simplemente cerramos el modal
-    if (!medicoCambio && !horaCambio && !fechaCambio) {
-      setCitaEnEdicion(null);
-      return;
-    }
-
-    // VALIDACIÓN DE COLISIÓN:
-    // Buscamos si existe OTRA cita activa para el MISMO médico, en el MISMO día y en la MISMA hora elegida.
-    const ocupado = citas.find(
-      (c) =>
-        c.id !== citaEnEdicion.id && // Que no sea la misma cita que estamos editando
-        c.medico === nuevoMedicoParaCita &&
-        c.fecha === nuevaFechaParaCita &&
-        c.hora === nuevaHoraParaCita &&
-        c.estado !== "finalizado",
-    );
-
-    if (ocupado) {
-      return Alert.alert(
-        "Horario Ocupado",
-        `El Dr. ${nuevoMedicoParaCita} ya tiene una cita agendada a las ${nuevaHoraParaCita} el día ${nuevaFechaParaCita}.`,
-      );
-    }
-
-    setLoading(true);
-    try {
-      const citaRef = doc(db, "citas", citaEnEdicion.id);
-
-      // Objeto con los campos dinámicos a actualizar
-      const camposActualizados = {
-        medico: nuevoMedicoParaCita,
-        hora: nuevaHoraParaCita,
-        fecha: nuevaFechaParaCita,
-      };
-
-      await updateDoc(citaRef, camposActualizados);
-
-      Alert.alert("Éxito", "La cita ha sido reprogramada correctamente.");
-      setCitaEnEdicion(null);
-    } catch (e) {
-      console.error("Error al reprogramar la cita: ", e);
-      Alert.alert("Error", "No se pudo actualizar la cita en el servidor.");
-    } finally {
-      setLoading(false);
-    }
-  };
   const onDateChange = (event, selectedDate) => {
     setMostrarCalendario(Platform.OS === "ios");
     if (selectedDate) {
-      const yyyy = selectedDate.getFullYear();
-      const mm = String(selectedDate.getMonth() + 1).padStart(2, "0");
-      const dd = String(selectedDate.getDate()).padStart(2, "0");
-      setFechaSel(`${yyyy}-${mm}-${dd}`);
+      setFechaSel(selectedDate.toISOString().split("T")[0]);
     }
   };
 
@@ -643,21 +612,6 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
     );
   }, [clientes, busqueda]);
 
-  const reporteCitasCerradas = useMemo(() => {
-    const conteo = {};
-    listaMedicos.forEach((m) => {
-      conteo[m.medico] = 0;
-    });
-
-    citas.forEach((cita) => {
-      if (cita.estado === "finalizado" && conteo[cita.medico] !== undefined) {
-        conteo[cita.medico] += 1;
-      }
-    });
-
-    return conteo;
-  }, [citas, listaMedicos]);
-
   useEffect(() => {
     if (citaEnEdicion) {
       setNuevoMedicoParaCita(citaEnEdicion.medico || "");
@@ -665,7 +619,6 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
       setNuevaFechaParaCita(citaEnEdicion.fecha || "");
     }
   }, [citaEnEdicion]);
-
   return (
     <View style={styles.container}>
       {/* HEADER */}
