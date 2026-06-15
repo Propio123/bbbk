@@ -311,50 +311,65 @@ export default function AdminMasterPanel() {
   const handleGuardarCambiosCita = async () => {
     if (!citaEnEdicion) return;
 
-    const medicoCambio = nuevoMedicoParaCita !== citaEnEdicion.medico;
-    const horaCambio = nuevaHoraParaCita !== citaEnEdicion.hora;
-    const fechaCambio = nuevaFechaParaCita !== citaEnEdicion.fecha;
+    // 1. Detectar qué campos cambiaron (incluyendo el estado)
+    const medicoCambio = nuevoMedicoParaCita !== citaEnEdicion.medicoOriginal; // Nota abajo sobre 'medicoOriginal' si aplica, o usa una referencia externa fija si no mutó antes
+    const horaCambio = nuevaHoraParaCita !== citaEnEdicion.horaOriginal;
+    const fechaCambio = nuevaFechaParaCita !== citaEnEdicion.fechaOriginal;
 
-    if (!medicoCambio && !horaCambio && !fechaCambio) {
+    // Para el estado, comparamos contra el estado real que llegó originalmente (si tienes guardado el objeto inicial)
+    // O de forma más simple: asumimos que si se presionó el botón, el estado en `citaEnEdicion.estado` es el nuevo.
+    // Para evitar falsos negativos, validemos si el estado actual difiere del de la grilla (agendaMap[citaEnEdicion.hora]?.estado)
+    const estadoOriginal = agendaMap[citaEnEdicion.hora]?.estado;
+    const estadoCambio = citaEnEdicion.estado !== estadoOriginal;
+
+    // Si absolutamente nada cambió, salimos de inmediato
+    if (!medicoCambio && !horaCambio && !fechaCambio && !estadoCambio) {
       setCitaEnEdicion(null);
       return;
     }
 
     setLoading(true);
     try {
-      // VALIDACIÓN ABSOLUTA EN FIRESTORE (Evita fallos si cambian a otra fecha fuera de la actual en el grid)
-      const qColision = query(
-        collection(db, "citas"),
-        where("medico", "==", nuevoMedicoParaCita),
-        where("fecha", "==", nuevaFechaParaCita),
-        where("hora", "==", nuevaHoraParaCita),
-      );
-
-      const snapColision = await getDocs(qColision);
-      const conflicto = snapColision.docs.find(
-        (d) => d.id !== citaEnEdicion.id && d.data().estado !== "finalizado",
-      );
-
-      if (conflicto) {
-        setLoading(false);
-        return Alert.alert(
-          "Horario Ocupado",
-          `El Dr(a). ${nuevoMedicoParaCita} ya tiene una cita agendada a las ${nuevaHoraParaCita} el día ${nuevaFechaParaCita}.`,
+      // 2. VALIDACIÓN DE COLISIÓN (Solo si se cambió fecha, hora o médico)
+      // Si solo se cambió el estado, no hace falta consultar a Firestore por colisiones
+      if (medicoCambio || horaCambio || fechaCambio) {
+        const qColision = query(
+          collection(db, "citas"),
+          where("medico", "==", nuevoMedicoParaCita),
+          where("fecha", "==", nuevaFechaParaCita),
+          where("hora", "==", nuevaHoraParaCita),
         );
+
+        const snapColision = await getDocs(qColision);
+        const conflicto = snapColision.docs.find(
+          (d) => d.id !== citaEnEdicion.id && d.data().estado !== "finalizado",
+        );
+
+        if (conflicto) {
+          setLoading(false);
+          return Alert.alert(
+            "Horario Ocupado",
+            `El Dr(a). ${nuevoMedicoParaCita} ya tiene una cita agendada a las ${nuevaHoraParaCita} el día ${nuevaFechaParaCita}.`,
+          );
+        }
       }
 
-      // Procedemos con la actualización en Firebase
-      const citaRef = doc(db, "citas", citaEnEdicion.id);
-      await updateDoc(citaRef, {
+      // 3. Preparar el objeto de actualización de forma dinámica
+      const camposAActualizar = {
         medico: nuevoMedicoParaCita,
         hora: nuevaHoraParaCita,
         fecha: nuevaFechaParaCita,
-      });
+        estado: citaEnEdicion.estado,
+      };
 
-      Alert.alert("Éxito", "La cita ha sido reprogramada correctamente.");
+      // Procedemos con la actualización en Firebase
+      const citaRef = doc(db, "citas", citaEnEdicion.id);
+      await updateDoc(citaRef, camposAActualizar);
+
+      Alert.alert("Éxito", "La cita ha sido actualizada correctamente.");
       setCitaEnEdicion(null);
     } catch (e) {
-      console.error("Error al reprogramar la cita: ", e);
+      console.error("Error al actualizar la cita: ", e);
       Alert.alert("Error", "No se pudo actualizar la cita en el servidor.");
     } finally {
       setLoading(false);
