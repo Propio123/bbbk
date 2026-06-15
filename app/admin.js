@@ -1109,6 +1109,37 @@ export default function AdminMasterPanel() {
                     </Text>
                   </TouchableOpacity>
                 )}
+                {/* 3. Si está CONFIRMADO -> Permite Finalizar (Paciente ya atendido) */}
+                {citaEnEdicion.estado === "confirmado" && (
+                  <TouchableOpacity
+                    style={[
+                      styles.btnModal,
+                      {
+                        backgroundColor: "#E8F5E9",
+                        borderColor: "#C8E6C9",
+                        borderWidth: 1,
+                        flex: 1,
+                      },
+                    ]}
+                    onPress={() =>
+                      setCitaEnEdicion({
+                        ...citaEnEdicion,
+                        estado: "finalizado",
+                      })
+                    }
+                  >
+                    <Text
+                      style={{
+                        color: "#2E7D32",
+                        fontWeight: "bold",
+                        fontSize: 13,
+                        textAlign: "center",
+                      }}
+                    >
+                      ✓ Finalizar (Atendida)
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
                 {/* Opción de Cancelar / Liberar (Disponible si no está finalizada o ya cancelada) */}
                 {["pendiente", "aprobado", "confirmado"].includes(
