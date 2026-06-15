@@ -157,6 +157,10 @@ export default function AdminMasterPanel() {
   const [citas, setCitas] = useState([]);
   const [citaEnEdicion, setCitaEnEdicion] = useState(null);
   const [nuevoMedicoParaCita, setNuevoMedicoParaCita] = useState("");
+  const [nuevaHoraParaCita, setNuevaHoraParaCita] = useState("");
+  const [nuevaFechaParaCita, setNuevaFechaParaCita] = useState("");
+  const [mostrarCalendarioEdicion, setMostrarCalendarioEdicion] =
+    useState(false);
 
   // --- ESTADOS CLIENTES ---
   const [clientes, setClientes] = useState([]);
@@ -556,35 +560,55 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
       </TouchableOpacity>
     </View>
   )); // Se pasa la dependencia de la función de eliminación
-  const guardarCambioMedico = async () => {
-    if (!nuevoMedicoParaCita || nuevoMedicoParaCita === citaEnEdicion.medico) {
+  const handleGuardarCambiosCita = async () => {
+    if (!citaEnEdicion) return;
+
+    const medicoCambio = nuevoMedicoParaCita !== citaEnEdicion.medico;
+    const horaCambio = nuevaHoraParaCita !== citaEnEdicion.hora;
+    const fechaCambio = nuevaFechaParaCita !== citaEnEdicion.fecha;
+
+    // Si absolutamente nada cambió, simplemente cerramos el modal
+    if (!medicoCambio && !horaCambio && !fechaCambio) {
       setCitaEnEdicion(null);
       return;
     }
 
-    // Validación de colisión de horarios usando el nombre correcto
+    // VALIDACIÓN DE COLISIÓN:
+    // Buscamos si existe OTRA cita activa para el MISMO médico, en el MISMO día y en la MISMA hora elegida.
     const ocupado = citas.find(
       (c) =>
+        c.id !== citaEnEdicion.id && // Que no sea la misma cita que estamos editando
         c.medico === nuevoMedicoParaCita &&
-        c.hora === citaEnEdicion.hora &&
+        c.fecha === nuevaFechaParaCita &&
+        c.hora === nuevaHoraParaCita &&
         c.estado !== "finalizado",
     );
 
     if (ocupado) {
       return Alert.alert(
-        "Error",
-        `El Dr. ${nuevoMedicoParaCita} ya está ocupado a las ${citaEnEdicion.hora}`,
+        "Horario Ocupado",
+        `El Dr. ${nuevoMedicoParaCita} ya tiene una cita agendada a las ${nuevaHoraParaCita} el día ${nuevaFechaParaCita}.`,
       );
     }
 
     setLoading(true);
     try {
-      await updateDoc(doc(db, "citas", citaEnEdicion.id), {
-        medico: nuevoMedicoParaCita, // Se guarda el string del nombre del médico asignado
-      });
+      const citaRef = doc(db, "citas", citaEnEdicion.id);
+
+      // Objeto con los campos dinámicos a actualizar
+      const camposActualizados = {
+        medico: nuevoMedicoParaCita,
+        hora: nuevaHoraParaCita,
+        fecha: nuevaFechaParaCita,
+      };
+
+      await updateDoc(citaRef, camposActualizados);
+
+      Alert.alert("Éxito", "La cita ha sido reprogramada correctamente.");
       setCitaEnEdicion(null);
     } catch (e) {
-      Alert.alert("Error", "No se pudo reasignar el médico.");
+      console.error("Error al reprogramar la cita: ", e);
+      Alert.alert("Error", "No se pudo actualizar la cita en el servidor.");
     } finally {
       setLoading(false);
     }
@@ -637,6 +661,8 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
   useEffect(() => {
     if (citaEnEdicion) {
       setNuevoMedicoParaCita(citaEnEdicion.medico || "");
+      setNuevaHoraParaCita(citaEnEdicion.hora || "");
+      setNuevaFechaParaCita(citaEnEdicion.fecha || "");
     }
   }, [citaEnEdicion]);
 
@@ -920,277 +946,121 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
 
       {/* PANEL EDICIÓN DE CITA */}
       {citaEnEdicion && (
-        <View style={styles.editPanel}>
-          <Text style={styles.editPanelTitle}>
-            Paciente:{" "}
-            {citaEnEdicion.NombrePaciente || citaEnEdicion.pacienteNombre}
-          </Text>
-
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              marginBottom: 12,
-            }}
-          >
-            <Text style={styles.label}>Estado actual: </Text>
-            <View
-              style={[
-                styles.statusTag,
-                citaEnEdicion.estado === "pendiente" && {
-                  backgroundColor: "#FFF3E0",
-                },
-                citaEnEdicion.estado === "aprobado" && {
-                  backgroundColor: "#E3F2FD",
-                },
-                citaEnEdicion.estado === "confirmado" && {
-                  backgroundColor: "#FFEBEE",
-                },
-                citaEnEdicion.estado === "finalizado" && {
-                  backgroundColor: "#E8F5E9",
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.statusTagText,
-                  citaEnEdicion.estado === "pendiente" && { color: "#E65100" },
-                  citaEnEdicion.estado === "aprobado" && { color: "#0D47A1" },
-                  citaEnEdicion.estado === "confirmado" && { color: "#C62828" },
-                  citaEnEdicion.estado === "finalizado" && { color: "#2E7D32" },
-                ]}
-              >
-                {(citaEnEdicion.estado || "pendiente").toUpperCase()}
+        <Modal
+          visible={!!citaEnEdicion}
+          animationType="slide"
+          transparent={true}
+        >
+          <View style={styles.modalCentradoContainer}>
+            <View style={styles.modalContenidoCard}>
+              <Text style={styles.modalTitulo}>Reprogramar Cita</Text>
+              <Text style={styles.pacienteSubtitulo}>
+                Paciente:{" "}
+                {citaEnEdicion.NombrePaciente || citaEnEdicion.pacienteNombre}
               </Text>
-            </View>
-          </View>
 
-          <Text style={styles.label}>
-            Reasignar médico para las {citaEnEdicion.hora}:
-          </Text>
+              {/* 1. SELECCIÓN DE MÉDICO */}
+              <Text style={styles.labelInput}>Asignar Especialista:</Text>
+              {/* Aquí puedes mantener tu Picker o lista actual apuntando a 'nuevoMedicoParaCita' y 'setNuevoMedicoParaCita' */}
 
-          {/* Lista Horizontal de Reasignación Corregida */}
-          <ScrollView
-            horizontal
-            style={{ marginBottom: 15, maxHeight: 45 }}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ alignItems: "center", gap: 8 }}
-          >
-            {listaMedicos.map((m) => {
-              // CAMBIADO: Se usa m.nombre en lugar de m.medico
-              const esSeleccionado = nuevoMedicoParaCita === m.nombre;
-              return (
-                <TouchableOpacity
-                  key={m.id}
-                  onPress={() => setNuevoMedicoParaCita(m.nombre)} // CAMBIADO: m.nombre
-                  style={[
-                    styles.miniTab,
-                    esSeleccionado && styles.tabActive,
-                    {
-                      paddingVertical: 6,
-                      paddingHorizontal: 12,
-                      borderRadius: 8,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.tabText,
-                      esSeleccionado
-                        ? { color: "#fff", fontWeight: "bold" }
-                        : { color: "#333" },
-                    ]}
-                  >
-                    {m.nombre}{" "}
-                    {/* CAMBIADO: Muestra el nombre real en el botón */}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {/* BOTONES DE ACCIÓN DE LA CITA */}
-          {/* BOTONES DE ACCIÓN DE LA CITA */}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {/* APROBAR CITA */}
-            {/* APROBAR CITA CORREGIDO */}
-            {citaEnEdicion.estado === "pendiente" && (
+              {/* 2. SELECCIÓN DE FECHA */}
+              <Text style={styles.labelInput}>Fecha de la Cita:</Text>
               <TouchableOpacity
-                disabled={loading}
-                onPress={async (e) => {
-                  if (e && e.stopPropagation) e.stopPropagation();
-                  setLoading(true);
-                  try {
-                    // 1. Actualizar el documento en la colección de Citas
-                    const citaRef = doc(db, "citas", citaEnEdicion.id);
-                    await updateDoc(citaRef, {
-                      estado: "aprobado",
-                    });
+                style={styles.selectorBotonInput}
+                onPress={() => setMostrarCalendarioEdicion(true)}
+              >
+                <Text style={styles.textoBotonInput}>{nuevaFechaParaCita}</Text>
+                <MaterialCommunityIcons
+                  name="calendar"
+                  size={20}
+                  color="#666"
+                />
+              </TouchableOpacity>
 
-                    // 2. CORRECCIÓN DEL GRID: Actualizar el espejo en la agenda médica
-                    // Buscamos el documento en agenda_medica que coincida con esta citaId
-                    const qAgenda = query(
-                      collection(db, "agenda_medica"),
-                      where("citaId", "==", citaEnEdicion.id),
-                    );
-                    const agendaSnapshot = await getDocs(qAgenda);
-
-                    if (!agendaSnapshot.empty) {
-                      const agendaDocRef = doc(
-                        db,
-                        "agenda_medica",
-                        agendaSnapshot.docs[0].id,
+              {mostrarCalendarioEdicion && (
+                <DateTimePicker
+                  value={new Date(nuevaFechaParaCita + "T00:00:00")}
+                  mode="date"
+                  display="default"
+                  onChange={(event, selectedDate) => {
+                    setMostrarCalendarioEdicion(Platform.OS === "ios");
+                    if (selectedDate) {
+                      const yyyy = selectedDate.getFullYear();
+                      const mm = String(selectedDate.getMonth() + 1).padStart(
+                        2,
+                        "0",
                       );
-                      await updateDoc(agendaDocRef, {
-                        estado: "aprobado", // Ahora el 'agendaMap' leerá el nuevo estado
-                      });
-                    }
-
-                    // Cierre limpio del modal
-                    setCitaEnEdicion(null);
-                  } catch (error) {
-                    console.error(
-                      "Error crítico al sincronizar aprobación con el Grid:",
-                      error,
-                    );
-                  } finally {
-                    setLoading(false);
-                  }
-                }}
-                style={[
-                  styles.btnAction,
-                  { backgroundColor: "#2196F3", opacity: loading ? 0.6 : 1 },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="check-circle-outline"
-                  size={16}
-                  color="#fff"
-                />
-                <Text style={styles.btnActionText}> APROBAR CITA</Text>
-              </TouchableOpacity>
-            )}
-
-            {/* CLIENTE CONFIRMÓ */}
-            {citaEnEdicion.estado === "aprobado" && (
-              <TouchableOpacity
-                disabled={loading}
-                onPress={async (e) => {
-                  if (e && e.stopPropagation) e.stopPropagation();
-                  setLoading(true);
-                  try {
-                    await updateDoc(doc(db, "citas", citaEnEdicion.id), {
-                      estado: "confirmado",
-                    });
-                    setCitaEnEdicion(null);
-                  } catch (error) {
-                    console.error("Error al confirmar:", error);
-                  } finally {
-                    setLoading(false);
-                  }
-                }}
-                style={[
-                  styles.btnAction,
-                  { backgroundColor: "#4CAF50", opacity: loading ? 0.6 : 1 },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="whatsapp"
-                  size={16}
-                  color="#fff"
-                />
-                <Text style={styles.btnActionText}> CLIENTE CONFIRMÓ</Text>
-              </TouchableOpacity>
-            )}
-
-            {/* GUARDAR CAMBIOS */}
-            <TouchableOpacity
-              disabled={loading}
-              onPress={(e) => {
-                if (e && e.stopPropagation) e.stopPropagation();
-                guardarCambioMedico();
-              }}
-              style={[
-                styles.btnAction,
-                {
-                  backgroundColor: COLORS.primaryGreen || "#8CC63F",
-                  opacity: loading ? 0.6 : 1,
-                },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="content-save"
-                size={16}
-                color="#fff"
-              />
-              <Text style={styles.btnActionText}> GUARDAR CAMBIOS</Text>
-            </TouchableOpacity>
-
-            {/* FINALIZAR */}
-            {citaEnEdicion.estado !== "pendiente" &&
-              citaEnEdicion.estado !== "finalizado" && (
-                <TouchableOpacity
-                  disabled={loading}
-                  onPress={async (e) => {
-                    if (e && e.stopPropagation) e.stopPropagation();
-                    setLoading(true);
-                    try {
-                      await updateDoc(doc(db, "citas", citaEnEdicion.id), {
-                        estado: "finalizado",
-                      });
-                      setCitaEnEdicion(null);
-                    } catch (error) {
-                      console.error("Error al finalizar:", error);
-                    } finally {
-                      setLoading(false);
+                      const dd = String(selectedDate.getDate()).padStart(
+                        2,
+                        "0",
+                      );
+                      setNuevaFechaParaCita(`${yyyy}-${mm}-${dd}`);
                     }
                   }}
-                  style={[
-                    styles.btnAction,
-                    { backgroundColor: "#9C27B0", opacity: loading ? 0.6 : 1 },
-                  ]}
-                >
-                  <MaterialCommunityIcons
-                    name="account-check"
-                    size={16}
-                    color="#fff"
-                  />
-                  <Text style={styles.btnActionText}> FINALIZAR</Text>
-                </TouchableOpacity>
+                />
               )}
 
-            {/* CANCELAR / LIBERAR CITA */}
-            {citaEnEdicion.estado !== "finalizado" && (
-              <TouchableOpacity
-                disabled={loading}
-                onPress={(e) => {
-                  if (e && e.stopPropagation) e.stopPropagation();
-                  handleLiberarCita(citaEnEdicion);
-                }}
-                style={[
-                  styles.btnAction,
-                  { backgroundColor: "#FF5252", opacity: loading ? 0.6 : 1 },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="calendar-remove"
-                  size={16}
-                  color="#fff"
-                />
-                <Text style={styles.btnActionText}> CANCELAR / LIBERAR</Text>
-              </TouchableOpacity>
-            )}
+              {/* 3. SELECCIÓN DE HORA (Aprovechando tu useMemo HORARIOS) */}
+              <Text style={styles.labelInput}>Hora de la Cita:</Text>
+              <View style={styles.contenedorGridHorasMini}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ maxHeight: 50 }}
+                >
+                  {HORARIOS.map((hora) => {
+                    const esSeleccionada = hora === nuevaHoraParaCita;
+                    return (
+                      <TouchableOpacity
+                        key={hora}
+                        style={[
+                          styles.horaMiniChip,
+                          esSeleccionada && {
+                            backgroundColor: COLORS.primary || "#007BFF",
+                          },
+                        ]}
+                        onPress={() => setNuevaHoraParaCita(hora)}
+                      >
+                        <Text
+                          style={[
+                            styles.horaMiniTexto,
+                            esSeleccionada && {
+                              color: "#fff",
+                              fontWeight: "bold",
+                            },
+                          ]}
+                        >
+                          {hora}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
 
-            {/* CERRAR */}
-            <TouchableOpacity
-              disabled={loading}
-              onPress={() => setCitaEnEdicion(null)}
-              style={styles.btnCancelText}
-            >
-              <Text style={{ color: "#666", fontWeight: "bold" }}>CERRAR</Text>
-            </TouchableOpacity>
+              {/* BOTONES DE ACCIÓN */}
+              <View style={styles.filaBotonesModal}>
+                <TouchableOpacity
+                  style={[styles.btnModal, styles.btnModalCancelar]}
+                  onPress={() => setCitaEnEdicion(null)}
+                >
+                  <Text style={styles.btnTextoModal}>Cancelar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.btnModal, styles.btnModalGuardar]}
+                  onPress={handleGuardarCambiosCita}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.btnTextoModal}>Guardar Cambios</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
-        </View>
+        </Modal>
       )}
 
       {/* MODAL WHATSAPP */}
