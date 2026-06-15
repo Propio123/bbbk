@@ -157,10 +157,6 @@ export default function AdminMasterPanel() {
   const [citas, setCitas] = useState([]);
   const [citaEnEdicion, setCitaEnEdicion] = useState(null);
   const [nuevoMedicoParaCita, setNuevoMedicoParaCita] = useState("");
-  const [nuevaHoraParaCita, setNuevaHoraParaCita] = useState("");
-  const [nuevaFechaParaCita, setNuevaFechaParaCita] = useState("");
-  const [mostrarCalendarioEdicion, setMostrarCalendarioEdicion] =
-    useState(false);
 
   // --- ESTADOS CLIENTES ---
   const [clientes, setClientes] = useState([]);
@@ -641,8 +637,6 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
   useEffect(() => {
     if (citaEnEdicion) {
       setNuevoMedicoParaCita(citaEnEdicion.medico || "");
-      setNuevaHoraParaCita(citaEnEdicion.hora || "");
-      setNuevaFechaParaCita(citaEnEdicion.fecha || "");
     }
   }, [citaEnEdicion]);
 
