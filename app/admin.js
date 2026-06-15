@@ -157,6 +157,10 @@ export default function AdminMasterPanel() {
   const [citas, setCitas] = useState([]);
   const [citaEnEdicion, setCitaEnEdicion] = useState(null);
   const [nuevoMedicoParaCita, setNuevoMedicoParaCita] = useState("");
+  const [nuevaHoraParaCita, setNuevaHoraParaCita] = useState("");
+  const [nuevaFechaParaCita, setNuevaFechaParaCita] = useState("");
+  const [mostrarCalendarioEdicion, setMostrarCalendarioEdicion] =
+    useState(false);
 
   // --- ESTADOS CLIENTES ---
   const [clientes, setClientes] = useState([]);
@@ -556,35 +560,55 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
       </TouchableOpacity>
     </View>
   )); // Se pasa la dependencia de la función de eliminación
-  const guardarCambioMedico = async () => {
-    if (!nuevoMedicoParaCita || nuevoMedicoParaCita === citaEnEdicion.medico) {
+  const handleGuardarCambiosCita = async () => {
+    if (!citaEnEdicion) return;
+
+    const medicoCambio = nuevoMedicoParaCita !== citaEnEdicion.medico;
+    const horaCambio = nuevaHoraParaCita !== citaEnEdicion.hora;
+    const fechaCambio = nuevaFechaParaCita !== citaEnEdicion.fecha;
+
+    // Si absolutamente nada cambió, simplemente cerramos el modal
+    if (!medicoCambio && !horaCambio && !fechaCambio) {
       setCitaEnEdicion(null);
       return;
     }
 
-    // Validación de colisión de horarios usando el nombre correcto
+    // VALIDACIÓN DE COLISIÓN:
+    // Buscamos si existe OTRA cita activa para el MISMO médico, en el MISMO día y en la MISMA hora elegida.
     const ocupado = citas.find(
       (c) =>
+        c.id !== citaEnEdicion.id && // Que no sea la misma cita que estamos editando
         c.medico === nuevoMedicoParaCita &&
-        c.hora === citaEnEdicion.hora &&
+        c.fecha === nuevaFechaParaCita &&
+        c.hora === nuevaHoraParaCita &&
         c.estado !== "finalizado",
     );
 
     if (ocupado) {
       return Alert.alert(
-        "Error",
-        `El Dr. ${nuevoMedicoParaCita} ya está ocupado a las ${citaEnEdicion.hora}`,
+        "Horario Ocupado",
+        `El Dr. ${nuevoMedicoParaCita} ya tiene una cita agendada a las ${nuevaHoraParaCita} el día ${nuevaFechaParaCita}.`,
       );
     }
 
     setLoading(true);
     try {
-      await updateDoc(doc(db, "citas", citaEnEdicion.id), {
-        medico: nuevoMedicoParaCita, // Se guarda el string del nombre del médico asignado
-      });
+      const citaRef = doc(db, "citas", citaEnEdicion.id);
+
+      // Objeto con los campos dinámicos a actualizar
+      const camposActualizados = {
+        medico: nuevoMedicoParaCita,
+        hora: nuevaHoraParaCita,
+        fecha: nuevaFechaParaCita,
+      };
+
+      await updateDoc(citaRef, camposActualizados);
+
+      Alert.alert("Éxito", "La cita ha sido reprogramada correctamente.");
       setCitaEnEdicion(null);
     } catch (e) {
-      Alert.alert("Error", "No se pudo reasignar el médico.");
+      console.error("Error al reprogramar la cita: ", e);
+      Alert.alert("Error", "No se pudo actualizar la cita en el servidor.");
     } finally {
       setLoading(false);
     }
@@ -637,6 +661,8 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
   useEffect(() => {
     if (citaEnEdicion) {
       setNuevoMedicoParaCita(citaEnEdicion.medico || "");
+      setNuevaHoraParaCita(citaEnEdicion.hora || "");
+      setNuevaFechaParaCita(citaEnEdicion.fecha || "");
     }
   }, [citaEnEdicion]);
 
@@ -695,7 +721,6 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
                 ? "Hoy"
                 : fechaSel}
             </Text>
-            {/* Se eliminó el antiguo ScrollView amontonado que causaba conflicto aquí */}
           </View>
         )}
       </View>
@@ -703,7 +728,6 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
       {/* SECTOR DE CALENDARIO */}
       {vistaActual === "agenda" && (
         <View style={styles.calendarNavContainer}>
-          {/* En Móvil mostramos el botón clásico, en Web renderizamos el selector nativo del navegador */}
           {Platform.OS !== "web" ? (
             <TouchableOpacity
               style={styles.calendarButton}
@@ -719,7 +743,7 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
               </Text>
             </TouchableOpacity>
           ) : (
-            /* SOLUCIÓN WEB: Input de fecha nativo HTML5 estilizado */
+            /* SOLUCIÓN WEB COMPATIBLE */
             <View
               style={[
                 styles.calendarButton,
@@ -738,11 +762,10 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
               />
               <input
                 type="date"
-                value={fechaSel} // Debe estar en formato YYYY-MM-DD
+                value={fechaSel}
                 onChange={(e) => {
-                  const nuevaFecha = e.target.value; // Retorna "YYYY-MM-DD"
-                  if (nuevaFecha) {
-                    // Simulamos el comportamiento del evento nativo para que tu función 'onDateChange' funcione idéntica
+                  const nuevaFecha = e.target.value;
+                  if (nuevaFecha && onDateChange) {
                     onDateChange(
                       { type: "set" },
                       new Date(nuevaFecha + "T12:00:00"),
@@ -763,13 +786,16 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
             </View>
           )}
 
-          {/* CALENDARIO NATIVO (Solo para Android / iOS) */}
+          {/* CALENDARIO NATIVO MOBILE */}
           {Platform.OS !== "web" && mostrarCalendario && (
             <DateTimePicker
               value={new Date(fechaSel + "T12:00:00")}
               mode="date"
               display={Platform.OS === "ios" ? "spinner" : "calendar"}
-              onChange={onDateChange}
+              onChange={(event, date) => {
+                setMostrarCalendario(false);
+                if (date && onDateChange) onDateChange(event, date);
+              }}
             />
           )}
         </View>
@@ -791,8 +817,8 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
                   <TouchableOpacity
                     key={m.id}
                     style={[
-                      styles.btnMedicoTab,
-                      esActivo && styles.btnMedicoTabActivo,
+                      styles.btnMedicoCard,
+                      esActivo && styles.btnMedicoCardActivo,
                     ]}
                     onPress={() => setMedicoActivoGrid(m.nombre)}
                   >
@@ -823,7 +849,7 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
             </ScrollView>
           </View>
 
-          {/* Grid de Horarios del Médico Seleccionado */}
+          {/* Grid de Horarios */}
           <ScrollView contentContainerStyle={styles.grid}>
             {HORARIOS.map((h) => {
               const info = agendaMap[h];
@@ -865,6 +891,7 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
               );
             })}
           </ScrollView>
+
           {/* Panel inferior de Citas Atendidas */}
           <View style={styles.reportFooter}>
             <View style={styles.reportHeaderRow}>
@@ -894,6 +921,7 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
           </View>
         </View>
       ) : (
+        /* VISTA CLIENTES */
         <View style={{ flex: 1, padding: 15 }}>
           <TextInput
             placeholder="Buscar cliente..."
@@ -920,277 +948,148 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
 
       {/* PANEL EDICIÓN DE CITA */}
       {citaEnEdicion && (
-        <View style={styles.editPanel}>
-          <Text style={styles.editPanelTitle}>
-            Paciente:{" "}
-            {citaEnEdicion.NombrePaciente || citaEnEdicion.pacienteNombre}
-          </Text>
-
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              marginBottom: 12,
-            }}
-          >
-            <Text style={styles.label}>Estado actual: </Text>
-            <View
-              style={[
-                styles.statusTag,
-                citaEnEdicion.estado === "pendiente" && {
-                  backgroundColor: "#FFF3E0",
-                },
-                citaEnEdicion.estado === "aprobado" && {
-                  backgroundColor: "#E3F2FD",
-                },
-                citaEnEdicion.estado === "confirmado" && {
-                  backgroundColor: "#FFEBEE",
-                },
-                citaEnEdicion.estado === "finalizado" && {
-                  backgroundColor: "#E8F5E9",
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.statusTagText,
-                  citaEnEdicion.estado === "pendiente" && { color: "#E65100" },
-                  citaEnEdicion.estado === "aprobado" && { color: "#0D47A1" },
-                  citaEnEdicion.estado === "confirmado" && { color: "#C62828" },
-                  citaEnEdicion.estado === "finalizado" && { color: "#2E7D32" },
-                ]}
-              >
-                {(citaEnEdicion.estado || "pendiente").toUpperCase()}
+        <Modal
+          visible={!!citaEnEdicion}
+          animationType="slide"
+          transparent={true}
+        >
+          <View style={styles.modalCentradoContainer}>
+            <View style={styles.modalContenidoCard}>
+              <Text style={styles.modalTitulo}>Reprogramar Cita</Text>
+              <Text style={styles.pacienteSubtitulo}>
+                Paciente:{" "}
+                {citaEnEdicion.NombrePaciente || citaEnEdicion.pacienteNombre}
               </Text>
-            </View>
-          </View>
 
-          <Text style={styles.label}>
-            Reasignar médico para las {citaEnEdicion.hora}:
-          </Text>
-
-          {/* Lista Horizontal de Reasignación Corregida */}
-          <ScrollView
-            horizontal
-            style={{ marginBottom: 15, maxHeight: 45 }}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ alignItems: "center", gap: 8 }}
-          >
-            {listaMedicos.map((m) => {
-              // CAMBIADO: Se usa m.nombre en lugar de m.medico
-              const esSeleccionado = nuevoMedicoParaCita === m.nombre;
-              return (
-                <TouchableOpacity
-                  key={m.id}
-                  onPress={() => setNuevoMedicoParaCita(m.nombre)} // CAMBIADO: m.nombre
-                  style={[
-                    styles.miniTab,
-                    esSeleccionado && styles.tabActive,
-                    {
-                      paddingVertical: 6,
-                      paddingHorizontal: 12,
-                      borderRadius: 8,
-                    },
-                  ]}
-                >
-                  <Text
+              {/* 1. SELECCIÓN DE MÉDICO (Integrado Horizontalmente) */}
+              <Text style={styles.labelInput}>Asignar Especialista:</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginBottom: 15, maxHeight: 45 }}
+              >
+                {listaMedicos.map((med) => (
+                  <TouchableOpacity
+                    key={med.id}
                     style={[
-                      styles.tabText,
-                      esSeleccionado
-                        ? { color: "#fff", fontWeight: "bold" }
-                        : { color: "#333" },
+                      styles.miniTab,
+                      nuevoMedicoParaCita === med.nombre && {
+                        backgroundColor: COLORS.primaryGreen,
+                      },
                     ]}
+                    onPress={() => setNuevoMedicoParaCita(med.nombre)}
                   >
-                    {m.nombre}{" "}
-                    {/* CAMBIADO: Muestra el nombre real en el botón */}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color:
+                          nuevoMedicoParaCita === med.nombre ? "#fff" : "#333",
+                      }}
+                    >
+                      {med.nombre}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
 
-          {/* BOTONES DE ACCIÓN DE LA CITA */}
-          {/* BOTONES DE ACCIÓN DE LA CITA */}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {/* APROBAR CITA */}
-            {/* APROBAR CITA CORREGIDO */}
-            {citaEnEdicion.estado === "pendiente" && (
+              {/* 2. SELECCIÓN DE FECHA */}
+              <Text style={styles.labelInput}>Fecha de la Cita:</Text>
               <TouchableOpacity
-                disabled={loading}
-                onPress={async (e) => {
-                  if (e && e.stopPropagation) e.stopPropagation();
-                  setLoading(true);
-                  try {
-                    // 1. Actualizar el documento en la colección de Citas
-                    const citaRef = doc(db, "citas", citaEnEdicion.id);
-                    await updateDoc(citaRef, {
-                      estado: "aprobado",
-                    });
+                style={styles.selectorBotonInput}
+                onPress={() => setMostrarCalendarioEdicion(true)}
+              >
+                <Text style={styles.textoBotonInput}>{nuevaFechaParaCita}</Text>
+                <MaterialCommunityIcons
+                  name="calendar"
+                  size={20}
+                  color="#666"
+                />
+              </TouchableOpacity>
 
-                    // 2. CORRECCIÓN DEL GRID: Actualizar el espejo en la agenda médica
-                    // Buscamos el documento en agenda_medica que coincida con esta citaId
-                    const qAgenda = query(
-                      collection(db, "agenda_medica"),
-                      where("citaId", "==", citaEnEdicion.id),
-                    );
-                    const agendaSnapshot = await getDocs(qAgenda);
-
-                    if (!agendaSnapshot.empty) {
-                      const agendaDocRef = doc(
-                        db,
-                        "agenda_medica",
-                        agendaSnapshot.docs[0].id,
+              {mostrarCalendarioEdicion && (
+                <DateTimePicker
+                  value={new Date(nuevaFechaParaCita + "T12:00:00")}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "inline" : "default"}
+                  onChange={(event, selectedDate) => {
+                    setMostrarCalendarioEdicion(Platform.OS === "ios");
+                    if (selectedDate) {
+                      const yyyy = selectedDate.getFullYear();
+                      const mm = String(selectedDate.getMonth() + 1).padStart(
+                        2,
+                        "0",
                       );
-                      await updateDoc(agendaDocRef, {
-                        estado: "aprobado", // Ahora el 'agendaMap' leerá el nuevo estado
-                      });
-                    }
-
-                    // Cierre limpio del modal
-                    setCitaEnEdicion(null);
-                  } catch (error) {
-                    console.error(
-                      "Error crítico al sincronizar aprobación con el Grid:",
-                      error,
-                    );
-                  } finally {
-                    setLoading(false);
-                  }
-                }}
-                style={[
-                  styles.btnAction,
-                  { backgroundColor: "#2196F3", opacity: loading ? 0.6 : 1 },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="check-circle-outline"
-                  size={16}
-                  color="#fff"
-                />
-                <Text style={styles.btnActionText}> APROBAR CITA</Text>
-              </TouchableOpacity>
-            )}
-
-            {/* CLIENTE CONFIRMÓ */}
-            {citaEnEdicion.estado === "aprobado" && (
-              <TouchableOpacity
-                disabled={loading}
-                onPress={async (e) => {
-                  if (e && e.stopPropagation) e.stopPropagation();
-                  setLoading(true);
-                  try {
-                    await updateDoc(doc(db, "citas", citaEnEdicion.id), {
-                      estado: "confirmado",
-                    });
-                    setCitaEnEdicion(null);
-                  } catch (error) {
-                    console.error("Error al confirmar:", error);
-                  } finally {
-                    setLoading(false);
-                  }
-                }}
-                style={[
-                  styles.btnAction,
-                  { backgroundColor: "#4CAF50", opacity: loading ? 0.6 : 1 },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="whatsapp"
-                  size={16}
-                  color="#fff"
-                />
-                <Text style={styles.btnActionText}> CLIENTE CONFIRMÓ</Text>
-              </TouchableOpacity>
-            )}
-
-            {/* GUARDAR CAMBIOS */}
-            <TouchableOpacity
-              disabled={loading}
-              onPress={(e) => {
-                if (e && e.stopPropagation) e.stopPropagation();
-                guardarCambioMedico();
-              }}
-              style={[
-                styles.btnAction,
-                {
-                  backgroundColor: COLORS.primaryGreen || "#8CC63F",
-                  opacity: loading ? 0.6 : 1,
-                },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="content-save"
-                size={16}
-                color="#fff"
-              />
-              <Text style={styles.btnActionText}> GUARDAR CAMBIOS</Text>
-            </TouchableOpacity>
-
-            {/* FINALIZAR */}
-            {citaEnEdicion.estado !== "pendiente" &&
-              citaEnEdicion.estado !== "finalizado" && (
-                <TouchableOpacity
-                  disabled={loading}
-                  onPress={async (e) => {
-                    if (e && e.stopPropagation) e.stopPropagation();
-                    setLoading(true);
-                    try {
-                      await updateDoc(doc(db, "citas", citaEnEdicion.id), {
-                        estado: "finalizado",
-                      });
-                      setCitaEnEdicion(null);
-                    } catch (error) {
-                      console.error("Error al finalizar:", error);
-                    } finally {
-                      setLoading(false);
+                      const dd = String(selectedDate.getDate()).padStart(
+                        2,
+                        "0",
+                      );
+                      setNuevaFechaParaCita(`${yyyy}-${mm}-${dd}`);
                     }
                   }}
-                  style={[
-                    styles.btnAction,
-                    { backgroundColor: "#9C27B0", opacity: loading ? 0.6 : 1 },
-                  ]}
-                >
-                  <MaterialCommunityIcons
-                    name="account-check"
-                    size={16}
-                    color="#fff"
-                  />
-                  <Text style={styles.btnActionText}> FINALIZAR</Text>
-                </TouchableOpacity>
+                />
               )}
 
-            {/* CANCELAR / LIBERAR CITA */}
-            {citaEnEdicion.estado !== "finalizado" && (
-              <TouchableOpacity
-                disabled={loading}
-                onPress={(e) => {
-                  if (e && e.stopPropagation) e.stopPropagation();
-                  handleLiberarCita(citaEnEdicion);
-                }}
-                style={[
-                  styles.btnAction,
-                  { backgroundColor: "#FF5252", opacity: loading ? 0.6 : 1 },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="calendar-remove"
-                  size={16}
-                  color="#fff"
-                />
-                <Text style={styles.btnActionText}> CANCELAR / LIBERAR</Text>
-              </TouchableOpacity>
-            )}
+              {/* 3. SELECCIÓN DE HORA */}
+              <Text style={styles.labelInput}>Hora de la Cita:</Text>
+              <View style={styles.contenedorGridHorasMini}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ maxHeight: 50 }}
+                >
+                  {HORARIOS.map((hora) => {
+                    const esSeleccionada = hora === nuevaHoraParaCita;
+                    return (
+                      <TouchableOpacity
+                        key={hora}
+                        style={[
+                          styles.horaMiniChip,
+                          esSeleccionada && {
+                            backgroundColor: COLORS.primary || "#007BFF",
+                          },
+                        ]}
+                        onPress={() => setNuevaHoraParaCita(hora)}
+                      >
+                        <Text
+                          style={[
+                            styles.horaMiniTexto,
+                            esSeleccionada && {
+                              color: "#fff",
+                              fontWeight: "bold",
+                            },
+                          ]}
+                        >
+                          {hora}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
 
-            {/* CERRAR */}
-            <TouchableOpacity
-              disabled={loading}
-              onPress={() => setCitaEnEdicion(null)}
-              style={styles.btnCancelText}
-            >
-              <Text style={{ color: "#666", fontWeight: "bold" }}>CERRAR</Text>
-            </TouchableOpacity>
+              {/* BOTONES DE ACCIÓN */}
+              <View style={styles.filaBotonesModal}>
+                <TouchableOpacity
+                  style={[styles.btnModal, styles.btnModalCancelar]}
+                  onPress={() => setCitaEnEdicion(null)}
+                >
+                  <Text style={styles.btnTextoModal}>Cancelar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.btnModal, styles.btnModalGuardar]}
+                  onPress={handleGuardarCambiosCita}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.btnTextoModal}>Guardar Cambios</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
-        </View>
+        </Modal>
       )}
 
       {/* MODAL WHATSAPP */}
@@ -1280,7 +1179,7 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
         </View>
       </Modal>
 
-      {/* MODAL MÉDICOS CRUD (AGREGAR, EDITAR, ELIMINAR) */}
+      {/* MODAL GESTIÓN DE MÉDICOS */}
       <Modal
         visible={modalMedicos}
         transparent
@@ -1290,15 +1189,13 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxHeight: "85%" }]}>
             <Text style={styles.modalTitle}>Gestión del Staff Médico</Text>
-
-            {/* Formulario Inline para añadir un nuevo médico */}
             <View style={styles.addDoctorForm}>
               <Text style={styles.formSectionTitle}>
                 + Agregar Nuevo Especialista
               </Text>
               <TextInput
                 style={styles.formInput}
-                placeholder="Servicio (ej: Ortodoncia, General)"
+                placeholder="Servicio (ej: Ortodoncia)"
                 placeholderTextColor="#999"
                 value={nuevaEspecialidadMed}
                 onChangeText={setNuevaEspecialidadMed}
@@ -1329,14 +1226,12 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
             <Text style={[styles.formSectionTitle, { marginTop: 15 }]}>
               Lista de Doctores Activos
             </Text>
-
-            {/* FlatList ahora utiliza la función memorizada estática */}
             <FlatList
               data={listaMedicos}
               keyExtractor={(item) => item.id}
               style={{ width: "100%" }}
               renderItem={renderMedicoItem}
-              windowSize={5} // Evita consumo excesivo de RAM si la lista crece
+              windowSize={5}
             />
 
             <TouchableOpacity
@@ -1350,7 +1245,8 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
           </View>
         </View>
       </Modal>
-      {/* INDICADOR DE CARGA */}
+
+      {/* GLOBAL LOADING INDICATOR */}
       {loading && (
         <ActivityIndicator
           style={styles.loader}
@@ -1362,14 +1258,12 @@ Le recordamos su cita para el día de mañana  ${cita.fecha}. A las ${cita.hora}
   );
 }
 
-// Asegúrate de añadir/revisar estos estilos en tu StyleSheet de abajo
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F4F6F8" },
   header: {
     padding: 20,
     paddingTop: 50,
-    backgroundColor: COLORS.darkGreen,
+    backgroundColor: "#1A3A34", // Valor fallback seguro
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
   },
@@ -1381,15 +1275,6 @@ const styles = StyleSheet.create({
   headerTitle: { color: "#fff", fontSize: 16, fontWeight: "bold" },
   fechaTexto: { color: "#fff", fontSize: 12, marginTop: 5, opacity: 0.8 },
   iconBtn: { marginLeft: 15 },
-  tab: {
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 15,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    marginRight: 8,
-  },
-  tabActive: { backgroundColor: COLORS.primaryGreen },
-  tabText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
   calendarNavContainer: {
     paddingHorizontal: 20,
     marginTop: 15,
@@ -1397,7 +1282,7 @@ const styles = StyleSheet.create({
   },
   calendarButton: {
     flexDirection: "row",
-    backgroundColor: COLORS.primaryGreen,
+    backgroundColor: "#8CC63F",
     paddingVertical: 12,
     paddingHorizontal: 25,
     borderRadius: 20,
@@ -1446,103 +1331,112 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 15,
   },
-  clienteCard: {
-    backgroundColor: "#fff",
-    padding: 12,
-    borderRadius: 15,
-    marginBottom: 8,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  hcInput: {
-    backgroundColor: "#F4F6F8",
-    width: 110,
-    borderRadius: 8,
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    fontSize: 12,
-    color: "#333",
-    fontWeight: "600",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  millasInput: {
-    backgroundColor: "#F0F0F0",
-    width: 55,
-    textAlign: "center",
-    borderRadius: 8,
-    padding: 5,
-    fontWeight: "bold",
-    color: COLORS.darkGreen,
-    marginRight: 5,
-  },
-  btnSmall: {
-    backgroundColor: COLORS.primaryGreen,
-    padding: 6,
-    borderRadius: 8,
-    marginLeft: 5,
-    minWidth: 35,
-    alignItems: "center",
-  },
-  btnText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
-  editPanel: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "#fff",
-    padding: 20,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    elevation: 25,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-  },
-  editPanelTitle: { fontWeight: "bold", fontSize: 15, marginBottom: 5 },
-  label: { fontSize: 12, fontWeight: "600", color: "#444", marginBottom: 5 },
-  statusTag: {
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
-    marginLeft: 10,
-  },
-  statusTagText: { fontSize: 10, fontWeight: "bold" },
-  miniTab: {
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    backgroundColor: "#EEE",
-    borderRadius: 10,
-    marginRight: 5,
-    justifyContent: "center",
-    height: 32,
-  },
-  btnAction: {
-    flexDirection: "row",
-    padding: 12,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
+
+  // MODAL CENTRADO (REPROGRAMACIÓN)
+  modalCentradoContainer: {
     flex: 1,
-    minWidth: 140,
-  },
-  btnActionText: { color: "#fff", fontWeight: "bold", fontSize: 11 },
-  btnCancelText: {
-    backgroundColor: "#F0F0F0",
-    padding: 12,
-    borderRadius: 12,
-    alignItems: "center",
     justifyContent: "center",
-    minWidth: 80,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    padding: 20,
   },
-  btnCancel: {
-    backgroundColor: "#F0F0F0",
+  modalContenidoCard: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#000",
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  modalTitulo: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  pacienteSubtitulo: {
+    fontSize: 14,
+    color: "#555",
+    marginBottom: 15,
+    textAlign: "center",
+  },
+  labelInput: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 5,
+    marginTop: 5,
+  },
+  selectorBotonInput: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    backgroundColor: "#F4F6F8",
     padding: 12,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  textoBotonInput: { color: "#333" },
+
+  contenedorGridHorasMini: { marginVertical: 10 },
+  horaMiniChip: {
     paddingHorizontal: 15,
+    paddingVertical: 8,
+    backgroundColor: "#E2E8F0",
+    borderRadius: 12,
+    marginRight: 8,
+    height: 35,
+  },
+  horaMiniTexto: { fontSize: 12, color: "#333" },
+
+  filaBotonesModal: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 20,
+  },
+  btnModal: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    marginHorizontal: 5,
+  },
+  btnModalCancelar: { backgroundColor: "#E2E8F0" },
+  btnModalGuardar: { backgroundColor: "#007BFF" },
+  btnTextoModal: { fontWeight: "bold", color: "#fff" },
+
+  // GESTIÓN DE MÉDICOS (MUTADOS CORRECTAMENTE)
+  selectorMedicosContainer: {
+    backgroundColor: "#F8F9FA",
+    borderBottomWidth: 1,
+    borderColor: "#E9ECEF",
+    paddingVertical: 10,
+  },
+  selectorMedicosScroll: { paddingHorizontal: 15, alignItems: "center" },
+  btnMedicoCard: {
+    backgroundColor: "#FFFFFF",
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+    elevation: 2,
+    minWidth: 130,
+    alignItems: "center",
+  },
+  btnMedicoCardActivo: {
+    backgroundColor: "#8CC63F",
+    borderColor: "#8CC63F",
+    elevation: 4,
+  },
+  textMedicoTab: { fontSize: 13, fontWeight: "700", color: "#343A40" },
+  textMedicoTabActivo: { color: "#fff" },
+  subtextMedicoTab: { fontSize: 11, color: "#6C757D", marginTop: 1 },
+  subtextMedicoTabActivo: { color: "rgba(255,255,255,0.85)" },
+
+  placeholderText: {
+    color: "#999",
+    fontStyle: "italic",
+    paddingHorizontal: 10,
   },
   modalOverlay: {
     flex: 1,
@@ -1551,13 +1445,18 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalContent: { backgroundColor: "#fff", padding: 20, borderRadius: 25 },
-  modalTitle: { fontWeight: "bold", textAlign: "center", marginBottom: 15 },
+  modalTitle: {
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 15,
+    fontSize: 16,
+  },
   bulkActions: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 10,
   },
-  actionLink: { color: COLORS.primaryGreen, fontWeight: "bold" },
+  actionLink: { color: "#8CC63F", fontWeight: "bold" },
   waItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -1572,65 +1471,12 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginTop: 15,
   },
-  selectorMedicosContainer: {
-    backgroundColor: "#F8F9FA",
-    borderBottomWidth: 1,
-    borderColor: "#E9ECEF",
-    paddingVertical: 10,
-  },
-  selectorMedicosScroll: {
-    paddingHorizontal: 15,
-    alignItems: "center",
-  },
-  btnMedicoCard: {
-    backgroundColor: "#FFFFFF",
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 14,
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: "#E0E0E0",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2, // Sombra suave en Android
-    minWidth: 130, // Evita que se colapse con nombres cortos
-  },
-  btnMedicoCardActivo: {
-    backgroundColor: COLORS.primaryGreen || "#8CC63F",
-    borderColor: COLORS.primaryGreen || "#8CC63F",
-    shadowOpacity: 0.15,
-    elevation: 4,
-  },
-  btnMedicoContent: {
-    alignItems: "center",
+  btnCancel: {
+    backgroundColor: "#F0F0F0",
+    padding: 12,
+    borderRadius: 12,
     justifyContent: "center",
-  },
-  textMedicoTab: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#343A40",
-    textAlign: "center",
-    marginTop: 2,
-  },
-  textMedicoTabActivo: {
-    color: "#3e8fb4",
-  },
-  subtextMedicoTab: {
-    fontSize: 11,
-    color: "#6C757D",
-    fontWeight: "500",
-    marginTop: 1,
-    textAlign: "center",
-  },
-  subtextMedicoTabActivo: {
-    color: "rgba(68, 136, 156, 0.85)",
-  },
-  placeholderText: {
-    color: "#999",
-    fontStyle: "italic",
-    paddingHorizontal: 10,
+    paddingHorizontal: 15,
   },
   btnTextBlack: { color: "#000", fontWeight: "bold" },
   btnSendAll: {
@@ -1639,9 +1485,42 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
   },
-  inputEdit: { borderBottomWidth: 1, borderColor: "#DDD", paddingVertical: 5 },
+  btnText: { color: "#fff", fontSize: 12, fontWeight: "bold" },
+
+  addDoctorForm: {
+    backgroundColor: "#F8F9FA",
+    padding: 12,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: "#E9ECEF",
+  },
+  formSectionTitle: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: "#4A5568",
+    marginBottom: 8,
+  },
+  formInput: {
+    backgroundColor: "#fff",
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    marginBottom: 8,
+    fontSize: 13,
+    color: "#333",
+  },
+  btnAgregarForm: {
+    backgroundColor: "#1A3A34",
+    flexDirection: "row",
+    padding: 10,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  btnAgregarFormText: { color: "#fff", fontSize: 12, fontWeight: "bold" },
   btnClose: {
-    backgroundColor: COLORS.darkGreen,
+    backgroundColor: "#1A3A34",
     padding: 12,
     borderRadius: 15,
     marginTop: 10,
@@ -1649,17 +1528,13 @@ const styles = StyleSheet.create({
   },
   loader: { position: "absolute", top: "50%", alignSelf: "center" },
 
-  // ESTILOS REPORTE SUPERIOR DE CITAS CERRADAS
+  // REPORTE FOOTER
   reportFooter: {
     backgroundColor: "#fff",
     padding: 14,
     borderTopWidth: 1,
     borderColor: "#E2E8F0",
     elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
   },
   reportHeaderRow: {
     flexDirection: "row",
@@ -1672,11 +1547,7 @@ const styles = StyleSheet.create({
     color: "#1E293B",
     marginLeft: 6,
   },
-  reportScroll: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
+  reportScroll: { flexDirection: "row", alignItems: "center" },
   reportBadge: {
     flexDirection: "row",
     backgroundColor: "#E8F5E9",
@@ -1686,15 +1557,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#C8E6C9",
     alignItems: "center",
+    marginRight: 8,
   },
-  reportDoctorName: {
-    fontSize: 11,
-    fontWeight: "bold",
-    color: "#1B5E20",
-  },
-  reportDoctorCount: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#2E7D32",
+  reportDoctorName: { fontSize: 11, fontWeight: "bold", color: "#1B5E20" },
+  reportDoctorCount: { fontSize: 11, fontWeight: "600", color: "#2E7D32" },
+  miniTab: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: "#EEE",
+    borderRadius: 10,
+    marginRight: 5,
+    justifyContent: "center",
   },
 });
