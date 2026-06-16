@@ -60,7 +60,7 @@ const Ubicacion = () => {
           <View style={styles.infoSection}>
             <Text style={styles.addressTitle}>Nuestra Ubicación</Text>
             <Text style={styles.addressText}>
-              Juan de Velasco 8-62 y Velasco{"\n"}
+              Manuel de la Chica Narvaez 8-62 y Velasco{"\n"}
               Ibarra 100105, Imbabura{"\n"}
               Ecuador
             </Text>
