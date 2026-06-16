@@ -145,13 +145,20 @@ const Info = () => {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.socialBtn}
-            onclick="window.open('https://www.facebook.com/bbbkodontologiaec/')"
+            onPress={() =>
+              Linking.openURL("https://www.facebook.com/bbbkodontologiaec/")
+            }
           >
             <MaterialCommunityIcons name="facebook" size={28} color="#1877F2" />
           </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.socialBtn}
-            onclick="window.open('https://www.instagram.com/bbbk_odontologia?igsh=MTk5OG5kMnd1djFzMg%3D%3D')"
+            onPress={() =>
+              Linking.openURL(
+                "https://www.instagram.com/bbbk_odontologia?igsh=MTk5OG5kMnd1djFzMg%3D%3D",
+              )
+            }
           >
             <MaterialCommunityIcons
               name="instagram"
