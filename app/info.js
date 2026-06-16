@@ -145,20 +145,29 @@ const Info = () => {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.socialBtn}
-            onPress={() =>
-              Linking.openURL("https://www.facebook.com/bbbkodontologiaec/")
-            }
+            onPress={() => {
+              const url = "https://www.facebook.com/bbbkodontologiaec/";
+              if (Platform.OS === "web") {
+                window.open(url, "_blank"); // Comportamiento web nativo impecable
+              } else {
+                Linking.openURL(url); // Comportamiento nativo para Android/iOS
+              }
+            }}
           >
             <MaterialCommunityIcons name="facebook" size={28} color="#1877F2" />
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.socialBtn}
-            onPress={() =>
-              Linking.openURL(
-                "https://www.instagram.com/bbbk_odontologia?igsh=MTk5OG5kMnd1djFzMg%3D%3D",
-              )
-            }
+            onPress={() => {
+              const url =
+                "https://www.instagram.com/bbbk_odontologia?igsh=MTk5OG5kMnd1djFzMg%3D%3D";
+              if (Platform.OS === "web") {
+                window.open(url, "_blank");
+              } else {
+                Linking.openURL(url);
+              }
+            }}
           >
             <MaterialCommunityIcons
               name="instagram"
