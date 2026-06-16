@@ -83,7 +83,7 @@ const SERVICIOS = [
   {
     id: "ortodoncia",
     nombre: "Ortodoncia",
-    duracion: 30,
+    duracion: 15,
     img: {
       uri: "https://www.clinicadentallarranaga.com/wp-content/uploads/que_es_una_ortodoncia.jpg",
     },
